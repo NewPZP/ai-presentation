@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1440">
+<title>知识幻灯片 — AI Presentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300;0,9..144,400;0,9..144,600;0,9..144,700;0,9..144,900;1,9..144,400&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{--cream:#F5F0E8;--terracotta:#CC785C;--terracotta-light:#E8A88E;--ink:#1A1A1A;--ink-soft:#3D3A36;--divider:#E8E2D8;--card-bg:#FDFBF7;--tag-olive:#6B7C5E;--tag-indigo:#4A5580;--tag-brown:#8C7A62;--tag-teal:#4D7C7E}
+html{font-size:16px;-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',-apple-system,sans-serif;background:var(--cream);color:var(--ink);min-height:100vh;overflow-x:hidden}
+.hero{position:relative;padding:80px 80px 120px;background:linear-gradient(135deg,#F5F0E8 0%,#EDE5D8 40%,#E8DDD0 100%);clip-path:polygon(0 0,100% 0,100% 82%,0 100%);overflow:hidden}
+.hero::before{content:'';position:absolute;top:-40%;right:-10%;width:55%;height:200%;background:linear-gradient(160deg,transparent 30%,rgba(204,120,92,.06) 50%,rgba(204,120,92,.12) 70%,transparent 90%);transform:rotate(-8deg);pointer-events:none}
+.hero::after{content:'';position:absolute;bottom:0;right:0;width:40%;height:100%;background:linear-gradient(200deg,transparent 40%,rgba(204,120,92,.08) 60%,rgba(74,85,128,.04) 80%,transparent 95%);pointer-events:none}
+.hero-content{position:relative;z-index:1;max-width:800px;animation:heroIn .6s cubic-bezier(.2,0,0,1) both}
+.hero-label{display:inline-block;font-family:'Inter',sans-serif;font-size:.75rem;font-weight:600;letter-spacing:.12em;text-transform:uppercase;color:var(--terracotta);margin-bottom:20px;padding:4px 12px;border:1px solid var(--terracotta-light);border-radius:4px}
+.hero-title{font-family:'Fraunces',serif;font-weight:900;font-size:3.5rem;line-height:1.1;color:var(--ink);margin-bottom:20px;letter-spacing:-.02em}
+.hero-subtitle{font-family:'Fraunces',serif;font-weight:300;font-size:1.35rem;line-height:1.6;color:var(--ink-soft);margin-bottom:28px;max-width:560px}
+.hero-stat{display:inline-flex;align-items:baseline;gap:8px;font-family:'Fraunces',serif}
+.hero-stat-number{font-size:2.2rem;font-weight:700;color:var(--terracotta);line-height:1}
+.hero-stat-label{font-size:.95rem;color:var(--ink-soft);font-weight:400}
+.main{max-width:1200px;margin:-40px auto 0;padding:0 80px 80px;position:relative;z-index:2}
+.toolbar{margin-bottom:40px}
+.search-wrap{position:relative;margin-bottom:20px}
+.search-icon{position:absolute;left:18px;top:50%;transform:translateY(-50%);width:18px;height:18px;color:var(--ink-soft);opacity:.5}
+.search-input{width:100%;padding:14px 20px 14px 48px;font-family:'Inter',sans-serif;font-size:.95rem;border:1px solid var(--divider);border-radius:8px;background:var(--card-bg);color:var(--ink);outline:none;transition:border-color .2s,box-shadow .2s}
+.search-input::placeholder{color:#A8A098}
+.search-input:focus{border-color:var(--terracotta-light);box-shadow:0 0 0 3px rgba(204,120,92,.1)}
+.tags-wrap{display:flex;flex-wrap:wrap;gap:8px}
+.tag-chip{padding:5px 14px;font-family:'Inter',sans-serif;font-size:.8rem;font-weight:500;border-radius:20px;border:1px solid var(--divider);background:transparent;color:var(--ink-soft);cursor:pointer;transition:all .2s;user-select:none}
+.tag-chip:hover{border-color:var(--ink-soft);color:var(--ink)}
+.tag-chip.active{border-color:var(--terracotta);background:rgba(204,120,92,.1);color:var(--terracotta)}
+.card-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:24px}
+.card{background:var(--card-bg);border:1px solid var(--divider);border-radius:8px;overflow:hidden;text-decoration:none;color:inherit;display:flex;flex-direction:column;transition:transform .25s cubic-bezier(.2,0,0,1),border-color .25s,box-shadow .25s;animation:fadeInUp .4s cubic-bezier(.2,0,0,1) both}
+.card:hover{transform:translateY(-4px);border-color:var(--terracotta-light);box-shadow:0 8px 24px rgba(26,26,26,.06)}
+.card:nth-child(1){animation-delay:.05s}.card:nth-child(2){animation-delay:.1s}.card:nth-child(3){animation-delay:.15s}
+.card:nth-child(4){animation-delay:.2s}.card:nth-child(5){animation-delay:.25s}.card:nth-child(6){animation-delay:.3s}
+.card-cover{position:relative;height:140px;display:flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#F5F0E8,#EDE5D8);overflow:hidden}
+.card-cover-char{font-family:'Fraunces',serif;font-size:3.5rem;font-weight:700;color:var(--ink);opacity:.15;line-height:1;user-select:none}
+.card-cover::after{content:'';position:absolute;bottom:0;left:0;right:0;height:40%;background:linear-gradient(to top,rgba(204,120,92,.06),transparent);pointer-events:none}
+.card-slides-badge{position:absolute;top:12px;right:12px;font-family:'Inter',sans-serif;font-size:.7rem;font-weight:600;padding:3px 9px;background:rgba(26,26,26,.7);color:#F5F0E8;border-radius:4px;backdrop-filter:blur(4px)}
+.card-body{padding:20px 20px 18px;flex:1;display:flex;flex-direction:column}
+.card-title{font-family:'Fraunces',serif;font-size:1.15rem;font-weight:600;line-height:1.35;margin-bottom:8px;color:var(--ink)}
+.card-desc{font-size:.85rem;line-height:1.55;color:var(--ink-soft);margin-bottom:14px;flex:1}
+.card-meta{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.card-tags{display:flex;flex-wrap:wrap;gap:5px}
+.card-tag{font-size:.7rem;font-weight:500;padding:2px 8px;border-radius:3px;color:var(--ink-soft);background:rgba(26,26,26,.04)}
+.card-tag.t-indigo{color:var(--tag-indigo);background:rgba(74,85,128,.08)}
+.card-tag.t-teal{color:var(--tag-teal);background:rgba(77,124,126,.08)}
+.card-tag.t-brown{color:var(--tag-brown);background:rgba(140,122,98,.08)}
+.card-tag.t-olive{color:var(--tag-olive);background:rgba(107,124,94,.08)}
+.card-date{font-size:.72rem;color:#A8A098;white-space:nowrap;flex-shrink:0}
+.empty-state{grid-column:1/-1;text-align:center;padding:80px 20px}
+.empty-state-icon{font-family:'Fraunces',serif;font-size:4rem;font-weight:300;color:var(--divider);line-height:1;margin-bottom:16px}
+.empty-state-text{font-family:'Fraunces',serif;font-size:1.2rem;font-weight:400;color:var(--ink-soft);margin-bottom:6px}
+.empty-state-hint{font-size:.85rem;color:#A8A098}
+.error-state{grid-column:1/-1;text-align:center;padding:80px 20px}
+.error-state-text{font-family:'Fraunces',serif;font-size:1.2rem;color:var(--ink-soft);margin-bottom:8px}
+.error-state-cmd{font-family:'SF Mono','Fira Code',monospace;font-size:.85rem;padding:8px 16px;background:rgba(26,26,26,.06);border-radius:6px;color:var(--ink);display:inline-block}
+.footer{text-align:center;padding:40px 80px;font-size:.8rem;color:#A8A098;border-top:1px solid var(--divider);max-width:1200px;margin:0 auto}
+@keyframes fadeInUp{from{opacity:0;transform:translateY(16px)}to{opacity:1;transform:translateY(0)}}
+@keyframes heroIn{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}
+@media(prefers-reduced-motion:reduce){.card,.hero-content{animation:none}.card:hover{transform:none}}
+</style>
+</head>
+<body>
+<header class="hero">
+  <div class="hero-content">
+    <span class="hero-label">AI Presentation</span>
+    <h1 class="hero-title">知识幻灯片</h1>
+    <p class="hero-subtitle">用 HTML 重新定义知识分享，每一页都是可交互的幻灯片</p>
+    <div class="hero-stat">
+      <span class="hero-stat-number" id="courseCount">6</span>
+      <span class="hero-stat-label">个课题</span>
+    </div>
+  </div>
+</header>
+<main class="main">
+  <div class="toolbar">
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input class="search-input" type="text" id="searchInput" placeholder="搜索课题标题、简介或标签..." aria-label="搜索课题">
+    </div>
+    <div class="tags-wrap" id="tagsWrap"></div>
+  </div>
+  <div class="card-grid" id="cardGrid"></div>
+</main>
+<footer class="footer">AI Presentation — 用 HTML 做知识学习 PPT</footer>
+
+<script>
+var MOCK_COURSES=[
+  {slug:"transformer-intro",entry:"transformer-intro/index.html",cover:"",title:"Transformer 入门",description:"30 分钟讲清楚 Attention 机制与 Transformer 架构核心原理",tags:["AI","深度学习","NLP"],author:"panzhipiao",updatedAt:"2026-06-10",slides:6},
+  {slug:"rust-ownership",entry:"rust-ownership/index.html",cover:"",title:"Rust 所有权与生命周期",description:"从零理解 Rust 最独特的内存管理模型",tags:["Rust","系统编程"],author:"panzhipiao",updatedAt:"2026-06-08",slides:12},
+  {slug:"design-patterns",entry:"design-patterns/index.html",cover:"",title:"设计模式实战",description:"23 种经典设计模式的现代 JavaScript 实现",tags:["架构","设计模式","OOP"],author:"panzhipiao",updatedAt:"2026-06-05",slides:24},
+  {slug:"data-viz",entry:"data-viz/index.html",cover:"",title:"数据可视化入门",description:"用 D3.js 让数据讲故事的完整指南",tags:["D3.js","可视化","数据"],author:"panzhipiao",updatedAt:"2026-05-28",slides:16},
+  {slug:"wasm-principles",entry:"wasm-principles/index.html",cover:"",title:"WebAssembly 原理",description:"深入理解 WASM 的编译管线与浏览器运行时",tags:["WASM","浏览器","性能"],author:"panzhipiao",updatedAt:"2026-05-20",slides:10},
+  {slug:"functional-programming",entry:"functional-programming/index.html",cover:"",title:"函数式编程思想",description:"从 Haskell 到日常编程的函数式思维迁移",tags:["FP","Haskell","编程范式"],author:"panzhipiao",updatedAt:"2026-05-15",slides:20}
+];
+
+var TAG_COLORS={
+  "AI":"t-indigo","深度学习":"t-indigo","NLP":"t-indigo",
+  "Rust":"t-teal","系统编程":"t-teal",
+  "架构":"t-brown","设计模式":"t-brown","OOP":"t-brown",
+  "D3.js":"t-olive","可视化":"t-olive","数据":"t-olive",
+  "WASM":"t-indigo","浏览器":"t-indigo","性能":"t-indigo",
+  "FP":"t-teal","Haskell":"t-teal","编程范式":"t-teal"
+};
+
+var CHIP_STYLE={
+  "AI":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "深度学习":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "NLP":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "Rust":{border:"var(--tag-teal)",bg:"rgba(77,124,126,.1)",color:"var(--tag-teal)"},
+  "系统编程":{border:"var(--tag-teal)",bg:"rgba(77,124,126,.1)",color:"var(--tag-teal)"},
+  "架构":{border:"var(--tag-brown)",bg:"rgba(140,122,98,.1)",color:"var(--tag-brown)"},
+  "设计模式":{border:"var(--tag-brown)",bg:"rgba(140,122,98,.1)",color:"var(--tag-brown)"},
+  "OOP":{border:"var(--tag-brown)",bg:"rgba(140,122,98,.1)",color:"var(--tag-brown)"},
+  "D3.js":{border:"var(--tag-olive)",bg:"rgba(107,124,94,.1)",color:"var(--tag-olive)"},
+  "可视化":{border:"var(--tag-olive)",bg:"rgba(107,124,94,.1)",color:"var(--tag-olive)"},
+  "数据":{border:"var(--tag-olive)",bg:"rgba(107,124,94,.1)",color:"var(--tag-olive)"},
+  "WASM":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "浏览器":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "性能":{border:"var(--tag-indigo)",bg:"rgba(74,85,128,.1)",color:"var(--tag-indigo)"},
+  "FP":{border:"var(--tag-teal)",bg:"rgba(77,124,126,.1)",color:"var(--tag-teal)"},
+  "Haskell":{border:"var(--tag-teal)",bg:"rgba(77,124,126,.1)",color:"var(--tag-teal)"},
+  "编程范式":{border:"var(--tag-teal)",bg:"rgba(77,124,126,.1)",color:"var(--tag-teal)"}
+};
+
+var courses=MOCK_COURSES;
+var activeTag=null;
+var searchQuery="";
+
+function getAllTags(data){
+  var s=new Set();
+  data.forEach(function(c){c.tags.forEach(function(t){s.add(t)})});
+  return Array.from(s);
+}
+
+function renderTags(){
+  var wrap=document.getElementById("tagsWrap");
+  wrap.innerHTML="";
+  var tags=getAllTags(courses);
+  var allChip=document.createElement("button");
+  allChip.className="tag-chip"+(activeTag===null?" active":"");
+  allChip.textContent="全部";
+  allChip.addEventListener("click",function(){activeTag=null;render()});
+  wrap.appendChild(allChip);
+  tags.forEach(function(t){
+    var chip=document.createElement("button");
+    chip.className="tag-chip"+(activeTag===t?" active":"");
+    chip.textContent=t;
+    if(activeTag===t){
+      var s=CHIP_STYLE[t]||{border:"var(--terracotta)",bg:"rgba(204,120,92,.1)",color:"var(--terracotta)"};
+      chip.style.borderColor=s.border;
+      chip.style.background=s.bg;
+      chip.style.color=s.color;
+    }
+    chip.addEventListener("click",function(){activeTag=(activeTag===t)?null:t;render()});
+    wrap.appendChild(chip);
+  });
+}
+
+function filterCourses(){
+  return courses.filter(function(c){
+    var matchTag=activeTag===null||c.tags.indexOf(activeTag)!==-1;
+    if(!matchTag)return false;
+    if(!searchQuery)return true;
+    var q=searchQuery.toLowerCase();
+    return c.title.toLowerCase().indexOf(q)!==-1||
+           c.description.toLowerCase().indexOf(q)!==-1||
+           c.tags.some(function(t){return t.toLowerCase().indexOf(q)!==-1});
+  });
+}
+
+function renderCards(){
+  var grid=document.getElementById("cardGrid");
+  grid.innerHTML="";
+  var filtered=filterCourses();
+  if(filtered.length===0){
+    var empty=document.createElement("div");
+    empty.className="empty-state";
+    empty.innerHTML='<div class="empty-state-icon">?</div><div class="empty-state-text">没有找到匹配的课题</div><div class="empty-state-hint">试试调整搜索词或切换标签</div>';
+    grid.appendChild(empty);
+    return;
+  }
+  filtered.forEach(function(c){
+    var card=document.createElement("a");
+    card.className="card";
+    card.href=c.entry;
+    card.target="_blank";
+    card.rel="noopener noreferrer";
+    var firstChar=c.title.charAt(0);
+    var tagsHtml=c.tags.map(function(t){
+      var cls=TAG_COLORS[t]||"";
+      return '<span class="card-tag '+cls+'">'+t+'</span>';
+    }).join("");
+    card.innerHTML='<div class="card-cover"><span class="card-cover-char">'+firstChar+'</span><span class="card-slides-badge">'+c.slides+' 页</span></div><div class="card-body"><div class="card-title">'+c.title+'</div><div class="card-desc">'+c.description+'</div><div class="card-meta"><div class="card-tags">'+tagsHtml+'</div><span class="card-date">'+c.updatedAt+'</span></div></div>';
+    grid.appendChild(card);
+  });
+}
+
+function render(){
+  renderTags();
+  renderCards();
+  document.getElementById("courseCount").textContent=courses.length;
+}
+
+document.getElementById("searchInput").addEventListener("input",function(e){
+  searchQuery=e.target.value.trim();
+  render();
+});
+
+function showError(){
+  var grid=document.getElementById("cardGrid");
+  grid.innerHTML="";
+  var err=document.createElement("div");
+  err.className="error-state";
+  err.innerHTML='<div class="error-state-text">\u8bfe\u9898\u6570\u636e\u52a0\u8f7d\u5931\u8d25</div><div class="error-state-cmd">node scripts/build-courses.mjs</div>';
+  grid.appendChild(err);
+}
+
+fetch("courses.json").then(function(r){return r.json()}).then(function(data){
+  if(Array.isArray(data)&&data.length>0){courses=data}
+  render();
+}).catch(function(){
+  courses=MOCK_COURSES;
+  render();
+  showError();
+});
+</script>
+</body>
+</html>

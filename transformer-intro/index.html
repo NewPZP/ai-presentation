@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Transformer 入门</title>
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  
+  :root {
+    --bg: #0f0f1a;
+    --surface: #1a1a2e;
+    --accent: #e94560;
+    --accent2: #0f3460;
+    --text: #eaeaea;
+    --text-muted: #888;
+    --font-display: Georgia, 'Noto Serif SC', serif;
+    --font-body: -apple-system, 'Segoe UI', sans-serif;
+  }
+
+  html, body { height: 100%; overflow: hidden; background: var(--bg); color: var(--text); }
+
+  .deck { width: 100vw; height: 100vh; position: relative; }
+  .slide {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    padding: 60px 80px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.4s ease;
+  }
+  .slide.active { opacity: 1; pointer-events: auto; }
+
+  .slide h1 { font-family: var(--font-display); font-size: clamp(36px, 5vw, 64px); margin-bottom: 16px; }
+  .slide h2 { font-family: var(--font-display); font-size: clamp(28px, 3.5vw, 44px); margin-bottom: 20px; color: var(--accent); }
+  .slide p  { font-family: var(--font-body); font-size: clamp(16px, 2vw, 22px); line-height: 1.7; max-width: 720px; text-align: center; color: var(--text-muted); }
+  .slide ul { list-style: none; text-align: left; max-width: 600px; }
+  .slide ul li { font-family: var(--font-body); font-size: clamp(16px, 2vw, 22px); line-height: 2; color: var(--text-muted); }
+  .slide ul li::before { content: '▸ '; color: var(--accent); }
+
+  .slide .subtitle { font-size: clamp(18px, 2.2vw, 26px); color: var(--text-muted); margin-bottom: 40px; }
+  .slide .accent-bar { width: 60px; height: 4px; background: var(--accent); margin: 20px 0; border-radius: 2px; }
+  .slide .diagram { font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.6; color: var(--text-muted); background: rgba(255,255,255,0.03); padding: 24px 32px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.06); }
+
+  .nav {
+    position: fixed; bottom: 24px; right: 32px; z-index: 100;
+    display: flex; gap: 8px; align-items: center;
+  }
+  .nav button {
+    background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.12);
+    color: var(--text); padding: 8px 16px; border-radius: 6px; cursor: pointer;
+    font-family: var(--font-body); font-size: 14px; transition: background 0.2s;
+  }
+  .nav button:hover { background: rgba(255,255,255,0.15); }
+  .nav .counter { color: var(--text-muted); font-size: 13px; font-family: var(--font-body); min-width: 40px; text-align: center; }
+
+  .progress { position: fixed; top: 0; left: 0; height: 3px; background: var(--accent); transition: width 0.3s ease; z-index: 100; }
+</style>
+</head>
+<body>
+
+<div class="deck" id="deck">
+  <!-- Slide 1: Title -->
+  <div class="slide active">
+    <h1 style="color: var(--accent);">Transformer</h1>
+    <div class="accent-bar"></div>
+    <p class="subtitle">Attention Is All You Need</p>
+    <p>30 分钟讲清楚 Transformer 架构核心原理</p>
+  </div>
+
+  <!-- Slide 2: Why Transformer -->
+  <div class="slide">
+    <h2>为什么需要 Transformer？</h2>
+    <ul>
+      <li>RNN 无法并行，训练慢</li>
+      <li>长距离依赖信息衰减</li>
+      <li>Attention 机制可以全局建模</li>
+      <li>2017 年论文：抛弃 RNN/CNN，纯 Attention</li>
+    </ul>
+  </div>
+
+  <!-- Slide 3: Self-Attention -->
+  <div class="slide">
+    <h2>Self-Attention 机制</h2>
+    <div class="diagram">
+  Q = X · Wq    (Query: 我在找什么？)
+  K = X · Wk    (Key:   我有什么？)
+  V = X · Wv    (Value: 我的实际内容)
+
+  Attention(Q, K, V) = softmax(Q · Kᵀ / √dₖ) · V
+    </div>
+    <p style="margin-top: 24px;">每个 token 都能直接"看到"序列中的任意其他 token</p>
+  </div>
+
+  <!-- Slide 4: Multi-Head -->
+  <div class="slide">
+    <h2>Multi-Head Attention</h2>
+    <ul>
+      <li>将 Q/K/V 拆成 h 个头</li>
+      <li>每个头学习不同的注意力模式</li>
+      <li>类比：多视角观察同一场景</li>
+      <li>拼接后线性投影 → 最终表示</li>
+    </ul>
+  </div>
+
+  <!-- Slide 5: Architecture -->
+  <div class="slide">
+    <h2>整体架构</h2>
+    <div class="diagram">
+  ┌─────────────────────┐
+  │   Output Embedding   │
+  ├─────────────────────┤
+  │  Decoder × N layers  │
+  │  ┌─ Masked Attn      │
+  │  ├─ Cross Attn       │
+  │  └─ FFN              │
+  ├─────────────────────┤
+  │  Encoder × N layers  │
+  │  ┌─ Self Attn        │
+  │  └─ FFN              │
+  ├─────────────────────┤
+  │   Input Embedding    │
+  └─────────────────────┘
+    </div>
+  </div>
+
+  <!-- Slide 6: Summary -->
+  <div class="slide">
+    <h2>关键要点</h2>
+    <ul>
+      <li>Self-Attention 是核心，替代了循环和卷积</li>
+      <li>Positional Encoding 补偿位置信息</li>
+      <li>Layer Norm + Residual 保证训练稳定</li>
+      <li>可扩展：GPT / BERT / ViT 都是变体</li>
+    </ul>
+    <div class="accent-bar"></div>
+    <p style="margin-top: 16px; font-style: italic;">"Attention Is All You Need" — Vaswani et al., 2017</p>
+  </div>
+</div>
+
+<div class="progress" id="progress"></div>
+
+<div class="nav">
+  <button onclick="prev()">←</button>
+  <span class="counter" id="counter">1 / 6</span>
+  <button onclick="next()">→</button>
+</div>
+
+<script>
+  const slides = document.querySelectorAll('.slide');
+  const counter = document.getElementById('counter');
+  const progress = document.getElementById('progress');
+  let current = 0;
+
+  function show(i) {
+    slides[current].classList.remove('active');
+    current = Math.max(0, Math.min(slides.length - 1, i));
+    slides[current].classList.add('active');
+    counter.textContent = `${current + 1} / ${slides.length}`;
+    progress.style.width = `${((current + 1) / slides.length) * 100}%`;
+  }
+
+  function next() { show(current + 1); }
+  function prev() { show(current - 1); }
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); next(); }
+    if (e.key === 'ArrowLeft') { e.preventDefault(); prev(); }
+  });
+
+  show(0);
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "generatedAt": "2026-06-09T22:02:48.415Z",
+  "courses": [
+    {
+      "slug": "transformer-intro",
+      "entry": "transformer-intro/index.html",
+      "cover": "transformer-intro/cover.svg",
+      "title": "Transformer 入门",
+      "description": "30 分钟讲清楚 Attention 机制与 Transformer 架构核心原理",
+      "tags": [
+        "AI",
+        "深度学习",
+        "NLP"
+      ],
+      "author": "panzhipiao",
+      "createdAt": "2026-06-09",
+      "updatedAt": "2026-06-10",
+      "slides": 6
+    }
+  ]
+}

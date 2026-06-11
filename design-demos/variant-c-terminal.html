@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>知识幻灯片 — AI Presentation</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg-deepest:#020C1B;
+  --bg-deep:#0A192F;
+  --bg-card:#112240;
+  --border:#233554;
+  --border-light:#2D3F65;
+  --text-primary:#CCD6F6;
+  --text-secondary:#8892B0;
+  --text-muted:#5A6686;
+  --accent:#64FFDA;
+  --accent-dim:rgba(100,255,218,0.1);
+  --accent-glow:rgba(100,255,218,0.25);
+  --font-sans:'Inter',system-ui,sans-serif;
+  --font-mono:'JetBrains Mono','Fira Code',monospace;
+}
+html{font-size:16px;scroll-behavior:smooth}
+body{background:var(--bg-deep);color:var(--text-primary);font-family:var(--font-sans);min-height:100vh;line-height:1.6}
+
+/* 顶栏 */
+.topbar{
+  position:sticky;top:0;z-index:100;
+  background:rgba(10,25,47,0.85);backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  padding:0 48px;height:64px;display:flex;align-items:center;justify-content:space-between;
+}
+.topbar .brand{display:flex;align-items:center;gap:12px;font-family:var(--font-mono);font-size:14px;font-weight:500}
+.topbar .brand .prompt{color:var(--accent);font-weight:700}
+.topbar .brand .name{color:var(--text-primary)}
+.topbar .stats{font-family:var(--font-mono);font-size:13px;color:var(--text-muted)}
+.topbar .stats span{color:var(--accent)}
+
+/* 主区域 */
+main{max-width:1200px;margin:0 auto;padding:48px 48px 80px}
+
+/* Hero */
+.hero{margin-bottom:48px}
+.hero .section-label{font-family:var(--font-mono);font-size:13px;color:var(--accent);margin-bottom:12px;display:flex;align-items:center;gap:8px}
+.hero .section-label::before{content:'//';color:var(--text-muted)}
+.hero h1{font-size:clamp(36px,4vw,52px);font-weight:700;line-height:1.15;margin-bottom:16px}
+.hero h1 .highlight{color:var(--accent)}
+.hero .subtitle{font-size:18px;color:var(--text-secondary);max-width:560px;line-height:1.7}
+
+/* 搜索 */
+.search-bar{
+  position:relative;margin-bottom:32px;
+}
+.search-bar .prompt-sign{
+  position:absolute;left:16px;top:50%;transform:translateY(-50%);
+  font-family:var(--font-mono);font-size:16px;color:var(--accent);font-weight:700;
+}
+.search-bar input{
+  width:100%;padding:14px 16px 14px 40px;
+  background:var(--bg-card);border:1px solid var(--border);border-radius:4px;
+  color:var(--text-primary);font-family:var(--font-mono);font-size:14px;
+  outline:none;transition:border-color .2s;
+}
+.search-bar input::placeholder{color:var(--text-muted)}
+.search-bar input:focus{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent-dim)}
+
+/* 标签筛选 */
+.tag-filters{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:40px}
+.tag-chip{
+  font-family:var(--font-mono);font-size:12px;
+  padding:5px 14px;border-radius:3px;cursor:pointer;
+  background:transparent;border:1px solid var(--border);color:var(--text-secondary);
+  transition:all .2s;
+}
+.tag-chip:hover{border-color:var(--accent);color:var(--accent)}
+.tag-chip.active{background:var(--accent-dim);border-color:var(--accent);color:var(--accent)}
+
+/* 卡片网格 */
+.cards-grid{
+  display:grid;
+  grid-template-columns:repeat(auto-fill,minmax(340px,1fr));
+  gap:20px;
+}
+
+/* 卡片 */
+.card{
+  background:var(--bg-card);border:1px solid var(--border);border-radius:6px;
+  overflow:hidden;cursor:pointer;text-decoration:none;color:inherit;
+  transition:border-color .3s,box-shadow .3s,transform .2s;
+  position:relative;
+}
+.card:hover{
+  border-color:var(--accent);
+  box-shadow:0 0 20px var(--accent-dim),0 8px 30px rgba(0,0,0,0.3);
+  transform:translateY(-4px);
+}
+.card:hover .card-title{color:var(--accent)}
+.card:hover .card-title{animation:glitch 0.15s ease}
+
+/* 终端窗口封面 */
+.card-cover{
+  background:var(--bg-deepest);padding:0;min-height:140px;
+  border-bottom:1px solid var(--border);position:relative;
+}
+.terminal-bar{
+  display:flex;align-items:center;gap:6px;padding:8px 12px;
+  background:rgba(2,12,27,0.8);border-bottom:1px solid var(--border);
+}
+.terminal-dot{width:8px;height:8px;border-radius:50%}
+.terminal-dot.r{background:#ff5f57}
+.terminal-dot.y{background:#febc2e}
+.terminal-dot.g{background:#28c840}
+.terminal-title{font-family:var(--font-mono);font-size:11px;color:var(--text-muted);margin-left:6px}
+.terminal-body{padding:14px 16px;font-family:var(--font-mono);font-size:13px;line-height:1.8}
+.terminal-body .cmd{color:var(--accent)}
+.terminal-body .comment{color:var(--text-muted)}
+.terminal-body .string{color:#a8d8a8}
+.terminal-body .keyword{color:#c792ea}
+
+/* 卡片内容 */
+.card-body{padding:16px 20px 20px}
+.card-title{
+  font-size:17px;font-weight:600;margin-bottom:6px;
+  transition:color .2s;color:var(--text-primary);
+}
+.card-desc{font-size:13px;color:var(--text-secondary);line-height:1.6;margin-bottom:12px;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;
+}
+.card-meta{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px}
+.card-tags{display:flex;flex-wrap:wrap;gap:6px}
+.card-tag{
+  font-family:var(--font-mono);font-size:11px;
+  padding:2px 8px;border-radius:2px;
+  background:var(--accent-dim);color:var(--accent);
+}
+.card-info{display:flex;align-items:center;gap:12px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono)}
+.card-info .slides-badge{color:var(--accent)}
+
+/* 空状态 */
+.empty-state{
+  text-align:center;padding:80px 20px;
+}
+.empty-state .icon{font-family:var(--font-mono);font-size:48px;color:var(--text-muted);margin-bottom:16px}
+.empty-state h3{font-size:20px;margin-bottom:8px;color:var(--text-secondary)}
+.empty-state p{font-size:14px;color:var(--text-muted)}
+
+/* glitch 动画 */
+@keyframes glitch{
+  0%{transform:translate(0)}
+  20%{transform:translate(-2px,1px);color:#ff6b9d}
+  40%{transform:translate(2px,-1px);color:var(--accent)}
+  60%{transform:translate(-1px,2px)}
+  80%{transform:translate(1px,-2px);color:#c792ea}
+  100%{transform:translate(0)}
+}
+
+/* 底部编号装饰 */
+.section-number{
+  font-family:var(--font-mono);font-size:13px;color:var(--text-muted);
+  margin-top:40px;padding-top:20px;border-top:1px solid var(--border);
+  display:flex;justify-content:space-between;
+}
+
+/* 响应式 */
+@media(max-width:768px){
+  .topbar{padding:0 20px}
+  main{padding:24px 20px 60px}
+  .cards-grid{grid-template-columns:1fr}
+}
+
+/* 错误状态 */
+.error-banner{
+  background:rgba(255,87,87,0.08);border:1px solid rgba(255,87,87,0.3);
+  border-radius:6px;padding:24px 32px;margin:40px 0;text-align:center;
+}
+.error-banner .cmd{font-family:var(--font-mono);color:var(--accent);background:var(--bg-card);padding:4px 12px;border-radius:3px;font-size:14px;margin-top:8px;display:inline-block}
+.error-banner p{color:var(--text-secondary);font-size:14px;margin-top:8px}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <span class="prompt">$</span>
+    <span class="name">knowledge-slides</span>
+  </div>
+  <div class="stats" id="stats">loading...</div>
+</header>
+
+<main>
+  <section class="hero">
+    <div class="section-label">知识幻灯片入口</div>
+    <h1>用 HTML 重新定义<br><span class="highlight">知识演示</span></h1>
+    <p class="subtitle">每个目录是一个课题，每张幻灯片都是可交互的 HTML。浏览、搜索、点击即可开始学习。</p>
+  </section>
+
+  <div class="search-bar">
+    <span class="prompt-sign">$</span>
+    <input type="text" id="search" placeholder="grep — 搜索课题标题、简介或标签..." autocomplete="off">
+  </div>
+
+  <div class="tag-filters" id="tagFilters"></div>
+
+  <div class="cards-grid" id="cardsGrid"></div>
+
+  <div class="section-number">
+    <span>01 / 课程目录</span>
+    <span id="resultCount"></span>
+  </div>
+</main>
+
+<script>
+var MOCK_COURSES = [
+  {slug:"transformer-intro",entry:"transformer-intro/index.html",cover:"",title:"Transformer 入门",description:"30 分钟讲清楚 Attention 机制与 Transformer 架构核心原理",tags:["AI","深度学习","NLP"],author:"panzhipiao",updatedAt:"2026-06-10",slides:6},
+  {slug:"rust-ownership",entry:"rust-ownership/index.html",cover:"",title:"Rust 所有权与生命周期",description:"从零理解 Rust 最独特的内存管理模型",tags:["Rust","系统编程"],author:"panzhipiao",updatedAt:"2026-06-08",slides:12},
+  {slug:"design-patterns",entry:"design-patterns/index.html",cover:"",title:"设计模式实战",description:"23 种经典设计模式的现代 JavaScript 实现",tags:["架构","设计模式","OOP"],author:"panzhipiao",updatedAt:"2026-06-05",slides:24},
+  {slug:"data-viz",entry:"data-viz/index.html",cover:"",title:"数据可视化入门",description:"用 D3.js 让数据讲故事的完整指南",tags:["D3.js","可视化","数据"],author:"panzhipiao",updatedAt:"2026-05-28",slides:16},
+  {slug:"wasm-principles",entry:"wasm-principles/index.html",cover:"",title:"WebAssembly 原理",description:"深入理解 WASM 的编译管线与浏览器运行时",tags:["WASM","浏览器","性能"],author:"panzhipiao",updatedAt:"2026-05-20",slides:10},
+  {slug:"functional-programming",entry:"functional-programming/index.html",cover:"",title:"函数式编程思想",description:"从 Haskell 到日常编程的函数式思维迁移",tags:["FP","Haskell","编程范式"],author:"panzhipiao",updatedAt:"2026-05-15",slides:20}
+];
+
+var activeTag = null;
+var searchQuery = '';
+var courses = MOCK_COURSES;
+
+function getAllTags(data) {
+  var tagSet = {};
+  data.forEach(function(c) {
+    c.tags.forEach(function(t) { tagSet[t] = true; });
+  });
+  return Object.keys(tagSet).sort();
+}
+
+function renderTags() {
+  var container = document.getElementById('tagFilters');
+  var tags = getAllTags(courses);
+  var html = '<span class="tag-chip' + (!activeTag ? ' active' : '') + '" data-tag="">全部</span>';
+  tags.forEach(function(tag) {
+    html += '<span class="tag-chip' + (activeTag === tag ? ' active' : '') + '" data-tag="' + tag + '">' + tag + '</span>';
+  });
+  container.innerHTML = html;
+
+  container.querySelectorAll('.tag-chip').forEach(function(chip) {
+    chip.addEventListener('click', function() {
+      activeTag = this.getAttribute('data-tag') || null;
+      renderTags();
+      renderCards();
+    });
+  });
+}
+
+function getFilteredCourses() {
+  var result = courses;
+  if (activeTag) {
+    result = result.filter(function(c) { return c.tags.indexOf(activeTag) !== -1; });
+  }
+  if (searchQuery) {
+    var q = searchQuery.toLowerCase();
+    result = result.filter(function(c) {
+      return c.title.toLowerCase().indexOf(q) !== -1
+        || c.description.toLowerCase().indexOf(q) !== -1
+        || c.tags.some(function(t) { return t.toLowerCase().indexOf(q) !== -1; });
+    });
+  }
+  return result;
+}
+
+function slugToDisplay(slug) {
+  return slug.replace(/-/g, ' ');
+}
+
+function renderCards() {
+  var filtered = getFilteredCourses();
+  var grid = document.getElementById('cardsGrid');
+  var counter = document.getElementById('resultCount');
+  counter.textContent = filtered.length + ' / ' + courses.length + ' 课题';
+
+  if (filtered.length === 0) {
+    grid.innerHTML = '<div class="empty-state"><div class="icon">∅</div><h3>未找到匹配的课题</h3><p>试试其他搜索词或清除筛选条件</p></div>';
+    return;
+  }
+
+  var html = '';
+  filtered.forEach(function(c) {
+    var cmdText = '> cd ' + c.slug;
+    var commentText = '// ' + c.description.substring(0, 40) + (c.description.length > 40 ? '...' : '');
+    html += '<a class="card" href="' + c.entry + '" target="_blank">'
+      + '<div class="card-cover">'
+      + '<div class="terminal-bar">'
+      + '<span class="terminal-dot r"></span>'
+      + '<span class="terminal-dot y"></span>'
+      + '<span class="terminal-dot g"></span>'
+      + '<span class="terminal-title">' + slugToDisplay(c.slug) + '</span>'
+      + '</div>'
+      + '<div class="terminal-body">'
+      + '<div><span class="cmd">' + cmdText + '</span></div>'
+      + '<div><span class="comment">' + commentText + '</span></div>'
+      + '</div>'
+      + '</div>'
+      + '<div class="card-body">'
+      + '<div class="card-title">' + c.title + '</div>'
+      + '<div class="card-desc">' + c.description + '</div>'
+      + '<div class="card-meta">'
+      + '<div class="card-tags">' + c.tags.map(function(t) { return '<span class="card-tag">' + t + '</span>'; }).join('') + '</div>'
+      + '<div class="card-info">'
+      + '<span>' + c.updatedAt + '</span>'
+      + '<span class="slides-badge">' + c.slides + ' slides</span>'
+      + '</div>'
+      + '</div>'
+      + '</div>'
+      + '</a>';
+  });
+  grid.innerHTML = html;
+}
+
+function updateStats() {
+  var statsEl = document.getElementById('stats');
+  var total = courses.length;
+  var totalSlides = courses.reduce(function(s, c) { return s + c.slides; }, 0);
+  statsEl.innerHTML = '已收录 <span>' + total + '</span> 个课题 · <span>' + totalSlides + '</span> 张幻灯片';
+}
+
+// 搜索
+document.getElementById('search').addEventListener('input', function() {
+  searchQuery = this.value.trim();
+  renderCards();
+});
+
+// 初始化
+renderTags();
+renderCards();
+updateStats();
+</script>
+</body>
+</html>

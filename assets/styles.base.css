@@ -1,0 +1,182 @@
+/* ============================================
+   styles.base.css
+   reset / variables / hero / toolbar / footer
+   ============================================ */
+
+*, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+
+:root {
+  --bg: #FAFAF7;
+  --ink: #1A1A1A;
+  --muted: #7A7A72;
+  --divider: #EDEDED;
+  --terracotta: #D97757;
+  --forest: #2D6A4F;
+  --indigo: #3A5A8C;
+  --warm-brown: #8B6F47;
+  --font-display: 'Fraunces', Georgia, serif;
+  --font-body: 'Inter', system-ui, sans-serif;
+  --font-hand: 'Caveat', cursive;
+}
+
+html { font-size: 16px; -webkit-font-smoothing: antialiased; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+
+/* ---------- Hero ---------- */
+.hero {
+  padding: 72px 64px 40px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.hero-eyebrow {
+  font-family: var(--font-hand);
+  font-size: 1.15rem;
+  color: var(--terracotta);
+  margin-bottom: 8px;
+  letter-spacing: .02em;
+}
+.hero h1 {
+  font-family: var(--font-display);
+  font-weight: 900;
+  font-size: 3.6rem;
+  line-height: 1.08;
+  letter-spacing: -.03em;
+  margin-bottom: 16px;
+}
+.hero h1 em {
+  color: var(--terracotta);
+  font-style: normal;
+}
+.hero-sub {
+  font-size: 1.15rem;
+  color: var(--muted);
+  max-width: 560px;
+  line-height: 1.65;
+}
+.hero-stats {
+  display: flex;
+  gap: 32px;
+  margin-top: 28px;
+}
+.hero-stat-num {
+  font-family: var(--font-display);
+  font-weight: 700;
+  font-size: 2rem;
+  line-height: 1;
+}
+.hero-stat-label {
+  font-size: .8rem;
+  color: var(--muted);
+  margin-top: 4px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+}
+
+/* ---------- Toolbar ---------- */
+.toolbar {
+  padding: 0 64px 20px;
+  max-width: 1440px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.search-wrap {
+  position: relative;
+  max-width: 420px;
+}
+.search-wrap svg {
+  position: absolute;
+  left: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--muted);
+}
+.search-input {
+  width: 100%;
+  padding: 10px 16px 10px 42px;
+  border: 1.5px solid var(--divider);
+  border-radius: 8px;
+  font-size: .95rem;
+  font-family: var(--font-body);
+  background: var(--bg);
+  color: var(--ink);
+  outline: none;
+  transition: border-color .2s;
+}
+.search-input::placeholder { color: var(--muted); }
+.search-input:focus { border-color: var(--terracotta); }
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.chip {
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: .8rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1.5px solid var(--divider);
+  background: transparent;
+  color: var(--muted);
+  transition: all .2s;
+  user-select: none;
+}
+.chip:hover {
+  border-color: var(--ink);
+  color: var(--ink);
+}
+.chip.active {
+  background: var(--ink);
+  color: var(--bg);
+  border-color: var(--ink);
+}
+
+/* ---------- Grid Wrap & Footer ---------- */
+.grid-wrap {
+  padding: 12px 64px 80px;
+  max-width: 1440px;
+  margin: 0 auto;
+}
+.footer {
+  padding: 32px 64px 48px;
+  max-width: 1440px;
+  margin: 0 auto;
+  border-top: 1.5px solid var(--divider);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: .8rem;
+  color: var(--muted);
+}
+.footer a {
+  color: var(--terracotta);
+  text-decoration: none;
+}
+.footer a:hover { text-decoration: underline; }
+
+/* ---------- Scrollbar ---------- */
+::-webkit-scrollbar { width: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--divider); border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: var(--muted); }
+
+/* ---------- Responsive (hero) ---------- */
+@media (max-width: 1100px) {
+  .hero h1 { font-size: 2.8rem; }
+}
+@media (max-width: 720px) {
+  .hero { padding: 48px 24px 24px; }
+  .hero h1 { font-size: 2.2rem; }
+  .toolbar { padding-left: 24px; padding-right: 24px; }
+  .grid-wrap { padding-left: 24px; padding-right: 24px; }
+  .footer { padding: 24px; flex-direction: column; gap: 8px; }
+}
