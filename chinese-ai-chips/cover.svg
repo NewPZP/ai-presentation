@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 600" width="800" height="600">
+  <rect width="800" height="600" fill="#0E1116"/>
+  <g fill="#2A3142">
+    <circle cx="560" cy="60" r="2.5"/><circle cx="585" cy="60" r="2.5"/><circle cx="610" cy="60" r="2.5"/><circle cx="635" cy="60" r="2.5"/><circle cx="660" cy="60" r="2.5"/><circle cx="685" cy="60" r="2.5"/><circle cx="710" cy="60" r="2.5"/><circle cx="735" cy="60" r="2.5"/><circle cx="760" cy="60" r="2.5"/>
+    <circle cx="560" cy="85" r="2.5"/><circle cx="585" cy="85" r="2.5"/><circle cx="610" cy="85" r="2.5"/><circle cx="635" cy="85" r="2.5"/><circle cx="660" cy="85" r="2.5"/><circle cx="685" cy="85" r="2.5"/><circle cx="710" cy="85" r="2.5"/><circle cx="735" cy="85" r="2.5"/><circle cx="760" cy="85" r="2.5"/>
+    <circle cx="560" cy="110" r="2.5"/><circle cx="585" cy="110" r="2.5"/><circle cx="610" cy="110" r="2.5"/><circle cx="635" cy="110" r="2.5"/><circle cx="660" cy="110" r="2.5"/><circle cx="685" cy="110" r="2.5"/><circle cx="710" cy="110" r="2.5"/><circle cx="735" cy="110" r="2.5"/><circle cx="760" cy="110" r="2.5"/>
+    <circle cx="560" cy="135" r="2.5"/><circle cx="585" cy="135" r="2.5"/><circle cx="610" cy="135" r="2.5"/><circle cx="635" cy="135" r="2.5"/><circle cx="660" cy="135" r="2.5"/><circle cx="685" cy="135" r="2.5"/><circle cx="710" cy="135" r="2.5"/><circle cx="735" cy="135" r="2.5"/><circle cx="760" cy="135" r="2.5"/>
+    <circle cx="560" cy="160" r="2.5"/><circle cx="585" cy="160" r="2.5"/><circle cx="610" cy="160" r="2.5"/><circle cx="635" cy="160" r="2.5"/><circle cx="660" cy="160" r="2.5"/><circle cx="685" cy="160" r="2.5"/><circle cx="710" cy="160" r="2.5"/><circle cx="735" cy="160" r="2.5"/><circle cx="760" cy="160" r="2.5"/>
+    <circle cx="560" cy="185" r="2.5"/><circle cx="585" cy="185" r="2.5"/><circle cx="610" cy="185" r="2.5"/><circle cx="635" cy="185" r="2.5"/><circle cx="660" cy="185" r="2.5"/><circle cx="685" cy="185" r="2.5"/><circle cx="710" cy="185" r="2.5"/><circle cx="735" cy="185" r="2.5"/><circle cx="760" cy="185" r="2.5"/>
+  </g>
+  <text x="60" y="250" font-family="Georgia, serif" font-weight="900" font-size="76" fill="#E5E7EB" letter-spacing="-2">国产 AI 芯片</text>
+  <text x="62" y="295" font-family="Inter, sans-serif" font-weight="400" font-size="22" fill="#94A3B8" letter-spacing="2">生态全景 × 开发者机会</text>
+  <line x1="60" y1="325" x2="160" y2="325" stroke="#E85D3B" stroke-width="3"/>
+  <g font-family="'JetBrains Mono', monospace" font-size="14" fill="#5EEAD4">
+    <text x="60" y="430">华为昇腾    Huawei Ascend</text>
+    <text x="60" y="455">寒武纪      Cambricon</text>
+    <text x="60" y="480">海光信息    Hygon</text>
+    <text x="60" y="505">摩尔线程    Moore Threads</text>
+    <text x="60" y="530">沐曦股份    MetaX</text>
+    <text x="60" y="555">壁仞科技    Biren</text>
+  </g>
+  <text x="740" y="570" font-family="'JetBrains Mono', monospace" font-size="12" fill="#64748B" text-anchor="end">2026.06 · 14 slides</text>
+</svg>

@@ -22,7 +22,8 @@
     "架构": "tag-arch", "设计模式": "tag-design-pattern", "OOP": "tag-oop",
     "D3.js": "tag-d3", "可视化": "tag-viz", "数据": "tag-data",
     "WASM": "tag-wasm", "浏览器": "tag-browser", "性能": "tag-perf",
-    "FP": "tag-fp", "Haskell": "tag-haskell", "编程范式": "tag-paradigm"
+    "FP": "tag-fp", "Haskell": "tag-haskell", "编程范式": "tag-paradigm",
+    "硬件": "tag-hardware", "国产芯片": "tag-china-chip"
   };
 
   // ---------- 封面色 / 手写标注 / 卡片变体 ----------
@@ -33,7 +34,7 @@
     { bg: "var(--warm-brown)" }
   ];
   var ANNOTATIONS = ["新", "Hot", "必读", "推荐", "精选", "Classic"];
-  var CARD_VARIANTS = ["", "tall", "compact", "hero-card", "tall", "compact"];
+  var CARD_VARIANTS = ["hero-card", "", "tall", "compact", "", "tall", "wide", "", "compact", "tall"];
 
   function hashSlug(s) {
     var h = 0;
@@ -149,7 +150,36 @@
       return;
     }
     courses.forEach(function (c, i) { el.appendChild(renderCard(c, i)); });
+    /* 真 masonry：按实际高度计算 grid-row span（首帧 + 字体加载后） */
+    requestAnimationFrame(function () { layoutMasonry(el); });
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(function () { layoutMasonry(el); });
+    } else {
+      setTimeout(function () { layoutMasonry(el); }, 400);
+    }
   }
+
+  // ---------- 真 masonry：用 grid-row span 让每张卡片按实际高度对齐 ----------
+  function layoutMasonry(grid) {
+    var style = getComputedStyle(grid);
+    var rowH = parseFloat(style.gridAutoRows) || 12;
+    var gap = parseFloat(style.rowGap || style.gap) || 20;
+    var cards = grid.querySelectorAll(".card");
+    for (var i = 0; i < cards.length; i++) {
+      var h = cards[i].getBoundingClientRect().height;
+      var span = Math.ceil((h + gap) / (rowH + gap));
+      cards[i].style.gridRowEnd = "span " + span;
+    }
+  }
+
+  var resizeTimer;
+  window.addEventListener("resize", function () {
+    clearTimeout(resizeTimer);
+    resizeTimer = setTimeout(function () {
+      var el = document.getElementById("masonry");
+      if (el && el.children.length) layoutMasonry(el);
+    }, 120);
+  });
 
   // ---------- 渲染错误横幅 ----------
   function renderErrorBanner(msg) {

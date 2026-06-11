@@ -1,0 +1,906 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1280">
+<title>国产 AI 芯片生态与开发者机会</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:wght@500;700;900&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --bg:#0E1116;--bg-elev:#1A1F2B;--bg-card:#171C26;
+  --text:#E5E7EB;--text-2:#94A3B8;--text-3:#64748B;
+  --accent:#E85D3B;--accent-dim:rgba(232,93,59,.15);
+  --teal:#5EEAD4;--gold:#FBBF24;--red:#F87171;
+  --border:#2A3142;--border-soft:#1F2533;
+  --f-display:"Fraunces",Georgia,serif;
+  --f-body:"Inter",system-ui,sans-serif;
+  --f-mono:"JetBrains Mono",Menlo,monospace;
+}
+html,body{height:100%;background:var(--bg);color:var(--text);font-family:var(--f-body);-webkit-font-smoothing:antialiased;overflow:hidden}
+
+/* ===== 进度条 ===== */
+.progress{position:fixed;top:0;left:0;right:0;height:3px;background:var(--border-soft);z-index:100}
+.progress-bar{height:100%;width:0;background:linear-gradient(90deg,var(--accent),var(--gold));transition:width .35s cubic-bezier(.2,0,0,1)}
+
+/* ===== Slide 容器 ===== */
+.deck{position:relative;width:100vw;height:100vh;overflow:hidden}
+.slide{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:64px 80px 96px;opacity:0;pointer-events:none;transform:translateX(20px);transition:opacity .4s ease,transform .4s ease}
+.slide.active{opacity:1;pointer-events:auto;transform:none}
+.slide-inner{width:100%;max-width:1200px;max-height:100%;overflow:auto}
+.slide-inner::-webkit-scrollbar{width:6px}
+.slide-inner::-webkit-scrollbar-thumb{background:var(--border);border-radius:3px}
+
+/* ===== 导航栏 ===== */
+.nav{position:fixed;left:0;right:0;bottom:0;height:56px;display:flex;align-items:center;justify-content:center;gap:24px;background:linear-gradient(to top,var(--bg) 60%,transparent);padding:0 32px;z-index:50}
+.nav-btn{background:transparent;border:1px solid var(--border);color:var(--text-2);font-family:var(--f-mono);font-size:12px;padding:7px 14px;border-radius:6px;cursor:pointer;transition:all .2s;letter-spacing:.05em}
+.nav-btn:hover{border-color:var(--accent);color:var(--accent);background:var(--accent-dim)}
+.nav-btn:disabled{opacity:.3;cursor:not-allowed}
+.nav-page{font-family:var(--f-mono);font-size:13px;color:var(--text-2);min-width:80px;text-align:center;letter-spacing:.1em}
+.nav-page .cur{color:var(--accent);font-weight:700}
+.nav-dots{position:fixed;right:24px;top:50%;transform:translateY(-50%);display:flex;flex-direction:column;gap:6px;z-index:50}
+.nav-dot{width:6px;height:6px;border-radius:50%;background:var(--border);border:none;padding:0;cursor:pointer;transition:all .2s;position:relative}
+.nav-dot.active{background:var(--accent);transform:scale(1.5)}
+.nav-dot:hover{background:var(--text-2)}
+.nav-dot[data-title]:hover::after{content:attr(data-title);position:absolute;right:14px;top:50%;transform:translateY(-50%);background:var(--bg-elev);border:1px solid var(--border);padding:4px 10px;border-radius:4px;font-family:var(--f-mono);font-size:11px;color:var(--text);white-space:nowrap;pointer-events:none}
+
+/* ===== 通用页眉 / 标题 ===== */
+.slide-eyebrow{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase;margin-bottom:14px;font-weight:600}
+.slide-title{font-family:var(--f-display);font-weight:700;font-size:42px;line-height:1.15;letter-spacing:-.02em;margin-bottom:8px}
+.slide-title em{color:var(--accent);font-style:normal}
+.slide-sub{font-size:16px;color:var(--text-2);line-height:1.6;margin-bottom:32px;max-width:760px}
+
+/* ===== 通用工具 ===== */
+.mono{font-family:var(--f-mono)}
+.num{font-family:var(--f-display);font-weight:700;color:var(--accent)}
+.num-teal{color:var(--teal)}
+.num-gold{color:var(--gold)}
+.divider{height:1px;background:var(--border);margin:24px 0}
+
+/* ===== Slide 1 封面 ===== */
+.cover{display:flex;flex-direction:column;justify-content:center;height:100%}
+.cover-h1{font-family:var(--f-display);font-weight:900;font-size:120px;line-height:1;letter-spacing:-.04em;color:var(--text);margin-bottom:18px}
+.cover-h1 em{color:var(--accent);font-style:normal}
+.cover-sub{font-family:var(--f-body);font-size:22px;color:var(--text-2);letter-spacing:.04em;margin-bottom:48px}
+.cover-rule{width:96px;height:3px;background:var(--accent);margin-bottom:48px}
+.cover-companies{display:grid;grid-template-columns:repeat(3,1fr);gap:18px 36px;font-family:var(--f-mono);font-size:14px;color:var(--teal);max-width:780px}
+.cover-foot{position:absolute;bottom:80px;right:80px;font-family:var(--f-mono);font-size:12px;color:var(--text-3);text-align:right;line-height:1.7}
+
+/* ===== Slide 2 议程 ===== */
+.agenda{display:grid;grid-template-columns:repeat(2,1fr);gap:18px 40px}
+.agenda-item{display:flex;align-items:baseline;gap:18px;padding:18px 0;border-top:1px solid var(--border-soft)}
+.agenda-num{font-family:var(--f-mono);font-size:14px;color:var(--accent);font-weight:600;letter-spacing:.05em}
+.agenda-text{font-family:var(--f-display);font-size:22px;font-weight:500;color:var(--text)}
+.agenda-note{font-size:13px;color:var(--text-3);margin-top:4px}
+
+/* ===== Slide 3 六强格局 ===== */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th,.tbl td{padding:11px 12px;text-align:left;border-bottom:1px solid var(--border-soft)}
+.tbl th{font-family:var(--f-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;font-weight:600;border-bottom:1px solid var(--border)}
+.tbl td.company{font-family:var(--f-display);font-weight:600;font-size:15px;color:var(--text)}
+.tbl td.mono{font-family:var(--f-mono);font-size:12px;color:var(--text-2)}
+.tbl td.hi{color:var(--accent);font-weight:600}
+.tbl tbody tr:hover{background:rgba(232,93,59,.04)}
+.share-bar{position:relative;height:6px;background:var(--border-soft);border-radius:3px;width:100px;display:inline-block;vertical-align:middle;margin-left:8px}
+.share-bar-fill{position:absolute;left:0;top:0;height:100%;background:linear-gradient(90deg,var(--accent),var(--gold));border-radius:3px}
+
+/* ===== Slide 4 三大路线 ===== */
+.route3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px;margin-top:8px}
+.route-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:24px 22px;display:flex;flex-direction:column;gap:12px;transition:border-color .2s,transform .2s}
+.route-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.route-icon{width:48px;height:48px;border-radius:6px;background:var(--accent-dim);display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:18px;font-weight:700;color:var(--accent);letter-spacing:-.05em}
+.route-name{font-family:var(--f-display);font-weight:700;font-size:20px;color:var(--text)}
+.route-name small{display:block;font-family:var(--f-mono);font-size:11px;color:var(--text-3);font-weight:400;margin-top:4px;letter-spacing:.08em}
+.route-companies{font-family:var(--f-mono);font-size:12px;color:var(--teal);line-height:1.7}
+.route-idea{font-size:14px;color:var(--text-2);line-height:1.6;flex:1}
+.route-analog{font-family:var(--f-mono);font-size:12px;color:var(--gold);background:rgba(251,191,36,.06);padding:8px 12px;border-radius:4px;border-left:2px solid var(--gold)}
+
+/* ===== Slide 5 矩阵 ===== */
+.matrix{width:100%;border-collapse:collapse;font-size:13px}
+.matrix th,.matrix td{padding:14px 16px;border:1px solid var(--border-soft);text-align:center;position:relative}
+.matrix th{font-family:var(--f-mono);font-size:11px;color:var(--text-2);text-transform:uppercase;letter-spacing:.08em;background:var(--bg-elev);font-weight:600}
+.matrix th:first-child,.matrix td:first-child{text-align:left;font-family:var(--f-mono);font-size:12px;color:var(--text-2);background:var(--bg-elev)}
+.matrix td{transition:background .15s;cursor:default}
+.matrix tr:hover td:first-child{color:var(--accent)}
+.matrix td:not(:first-child):hover{background:var(--accent-dim);color:var(--accent)}
+.matrix-cell{font-family:var(--f-display);font-weight:600;font-size:15px}
+.cell-hi{color:var(--teal)}
+.cell-mid{color:var(--gold)}
+.cell-low{color:var(--red)}
+.matrix td[data-tip]:hover::after{content:attr(data-tip);position:absolute;top:100%;left:50%;transform:translate(-50%,8px);background:var(--bg-elev);border:1px solid var(--accent);padding:6px 10px;border-radius:4px;font-family:var(--f-body);font-size:11px;color:var(--text);white-space:nowrap;z-index:10;pointer-events:none;font-weight:400}
+
+/* ===== Slide 6 达芬奇架构 ===== */
+.davinci{display:grid;grid-template-columns:1fr 1fr;gap:36px;align-items:start}
+.davinci-diagram{background:var(--bg-card);border:1px solid var(--border);border-radius:10px;padding:28px;position:relative}
+.davinci-title{font-family:var(--f-mono);font-size:11px;color:var(--text-3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:18px;text-align:center}
+.davinci-row{display:flex;gap:10px;margin-bottom:10px;justify-content:center}
+.davinci-cube{flex:1;max-width:90px;aspect-ratio:1;background:linear-gradient(135deg,var(--accent),#A03B23);border-radius:6px;display:flex;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:11px;color:#fff;font-weight:600;box-shadow:inset 0 -3px 0 rgba(0,0,0,.2)}
+.davinci-aux{flex:1;max-width:130px;aspect-ratio:2/1;background:var(--bg-elev);border:1px solid var(--border);border-radius:6px;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:var(--f-mono);font-size:11px;color:var(--text-2);gap:2px}
+.davinci-aux b{color:var(--teal);font-weight:600}
+.davinci-label{margin-top:14px;text-align:center;font-family:var(--f-mono);font-size:11px;color:var(--text-3);letter-spacing:.05em}
+.davinci-points{display:flex;flex-direction:column;gap:16px}
+.dp-item{padding-left:20px;position:relative;font-size:14px;line-height:1.6;color:var(--text-2)}
+.dp-item::before{content:"";position:absolute;left:0;top:9px;width:8px;height:2px;background:var(--accent)}
+.dp-item b{color:var(--text);font-weight:600}
+.dp-num{display:inline-block;font-family:var(--f-mono);font-size:12px;color:var(--gold);background:rgba(251,191,36,.1);padding:2px 8px;border-radius:3px;margin-left:6px}
+.dp-short{margin-top:8px;padding:12px 16px;background:rgba(248,113,113,.06);border-left:2px solid var(--red);border-radius:0 4px 4px 0;font-size:13px;color:var(--text-2);line-height:1.6}
+.dp-short b{color:var(--red)}
+
+/* ===== Slide 7 六家速览 ===== */
+.six-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+.six-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:8px;transition:border-color .2s}
+.six-card:hover{border-color:var(--accent)}
+.six-name{font-family:var(--f-display);font-weight:700;font-size:17px;color:var(--text);display:flex;justify-content:space-between;align-items:baseline}
+.six-name small{font-family:var(--f-mono);font-size:10px;color:var(--text-3);letter-spacing:.05em;font-weight:400}
+.six-tag{font-family:var(--f-mono);font-size:10px;color:var(--accent);letter-spacing:.05em;margin-bottom:2px}
+.six-pro{font-size:12px;color:var(--text-2);line-height:1.55;flex:1}
+.six-pro b{color:var(--teal);font-weight:500}
+.six-con{font-size:11px;color:var(--text-3);padding-top:8px;border-top:1px solid var(--border-soft);line-height:1.5}
+.six-con b{color:var(--red);font-weight:500}
+.six-num{font-family:var(--f-mono);font-size:16px;color:var(--gold);font-weight:700}
+
+/* ===== Slide 8 代差 ===== */
+.gap-list{display:flex;flex-direction:column;gap:14px;margin-top:12px}
+.gap-row{display:grid;grid-template-columns:130px 1fr 1fr 1fr;gap:16px;align-items:center;padding:12px 0;border-bottom:1px solid var(--border-soft)}
+.gap-name{font-family:var(--f-display);font-weight:600;font-size:15px;color:var(--text)}
+.gap-bar-wrap{position:relative;height:24px;background:var(--bg-card);border-radius:4px;cursor:help;overflow:visible}
+.gap-bar-fill{position:absolute;left:0;top:0;height:100%;border-radius:4px;transition:opacity .2s}
+.gap-bar-fill.arch{background:linear-gradient(90deg,var(--accent),#A03B23)}
+.gap-bar-fill.proc{background:linear-gradient(90deg,var(--gold),#A8762C)}
+.gap-bar-fill.eco{background:linear-gradient(90deg,var(--red),#7F2F2F)}
+.gap-bar-label{position:absolute;left:8px;top:50%;transform:translateY(-50%);font-family:var(--f-mono);font-size:11px;color:#fff;font-weight:600;text-shadow:0 1px 2px rgba(0,0,0,.4);z-index:2}
+.gap-bar-wrap:hover .gap-bar-fill{opacity:.85}
+.gap-bar-wrap[data-tip]:hover::before{content:attr(data-tip);position:absolute;bottom:calc(100% + 6px);left:50%;transform:translateX(-50%);background:var(--bg-elev);border:1px solid var(--accent);padding:5px 9px;border-radius:4px;font-family:var(--f-body);font-size:11px;color:var(--text);white-space:nowrap;z-index:10}
+.gap-legend{display:flex;gap:24px;margin-top:18px;font-family:var(--f-mono);font-size:11px;color:var(--text-2);letter-spacing:.05em}
+.gap-legend span{display:flex;align-items:center;gap:6px}
+.gap-legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+
+/* ===== Slide 9 场景配对 ===== */
+.pair-list{display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.pair-row{display:grid;grid-template-columns:1fr 24px 1.2fr 1.6fr;gap:14px;align-items:center;padding:12px 16px;background:var(--bg-card);border:1px solid var(--border);border-radius:6px;transition:border-color .2s}
+.pair-row:hover{border-color:var(--accent)}
+.pair-scene{font-family:var(--f-display);font-size:15px;font-weight:600;color:var(--text)}
+.pair-arrow{font-family:var(--f-mono);font-size:14px;color:var(--accent);text-align:center}
+.pair-route{font-family:var(--f-mono);font-size:13px;color:var(--teal);font-weight:500}
+.pair-reason{font-size:12px;color:var(--text-3);line-height:1.5}
+
+/* ===== Slide 10 四象限 ===== */
+.quad-wrap{position:relative;padding:0 8px 28px 36px}
+.quad{display:grid;grid-template-columns:repeat(2,1fr);gap:14px;position:relative}
+.quad-axis{position:absolute;font-family:var(--f-mono);font-size:10px;color:var(--text-3);letter-spacing:.1em;text-transform:uppercase}
+.quad-axis.x{bottom:6px;left:50%;transform:translateX(-50%)}
+.quad-axis.y{left:0;top:50%;transform:translateY(-50%) rotate(-90deg);transform-origin:left center;white-space:nowrap}
+.quad-cell{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px 20px;cursor:pointer;transition:all .25s;min-height:170px;position:relative}
+.quad-cell:hover{border-color:var(--accent);background:var(--bg-elev)}
+.quad-cell.expanded{border-color:var(--accent);background:var(--bg-elev)}
+.quad-tag{font-family:var(--f-mono);font-size:10px;color:var(--text-3);letter-spacing:.1em;margin-bottom:6px}
+.quad-name{font-family:var(--f-display);font-weight:700;font-size:18px;color:var(--text);margin-bottom:6px}
+.quad-stat{font-family:var(--f-mono);font-size:11px;color:var(--accent);margin-bottom:12px}
+.quad-list{list-style:none;font-size:12px;color:var(--text-2);line-height:1.8;padding-left:0}
+.quad-list li{padding-left:14px;position:relative}
+.quad-list li::before{content:"\\B7";position:absolute;left:2px;color:var(--accent);font-weight:700}
+.quad-detail{max-height:0;overflow:hidden;transition:max-height .35s ease,margin-top .35s ease;font-size:11px;color:var(--text-3);line-height:1.7}
+.quad-cell.expanded .quad-detail{max-height:240px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-soft)}
+.quad-detail b{color:var(--teal);font-weight:500}
+.quad-cell::after{content:"+";position:absolute;top:18px;right:20px;font-family:var(--f-mono);font-size:16px;color:var(--text-3);transition:transform .25s,color .25s}
+.quad-cell.expanded::after{transform:rotate(45deg);color:var(--accent)}
+
+/* ===== Slide 11/12 变现路径 ===== */
+.path-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:16px;margin-top:8px}
+.path-grid.cols-2{grid-template-columns:repeat(2,1fr)}
+.path-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:20px;display:flex;flex-direction:column;gap:12px;transition:border-color .2s,transform .2s}
+.path-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.path-head{display:flex;justify-content:space-between;align-items:baseline}
+.path-name{font-family:var(--f-display);font-weight:700;font-size:18px;color:var(--text)}
+.path-no{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.1em}
+.path-desc{font-size:12px;color:var(--text-2);line-height:1.6}
+.path-items{display:flex;flex-direction:column;gap:8px}
+.path-item{display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:7px 10px;background:var(--bg-elev);border-radius:4px;font-size:12px}
+.path-item-name{color:var(--text-2)}
+.path-item-price{font-family:var(--f-mono);font-size:11px;color:var(--gold);white-space:nowrap}
+.path-case{font-size:11px;color:var(--text-3);line-height:1.55;padding-top:10px;border-top:1px solid var(--border-soft)}
+.path-case b{color:var(--teal);font-weight:500}
+
+/* ===== Slide 12 厂商激励小表 ===== */
+.vendor-tbl{margin-top:20px;width:100%;border-collapse:collapse;font-size:12px}
+.vendor-tbl th,.vendor-tbl td{padding:10px 12px;text-align:left;border-bottom:1px solid var(--border-soft)}
+.vendor-tbl th{font-family:var(--f-mono);font-size:10px;color:var(--text-3);text-transform:uppercase;letter-spacing:.1em;font-weight:600;background:var(--bg-elev)}
+.vendor-tbl td.v-name{font-family:var(--f-display);font-weight:600;color:var(--text)}
+.vendor-tbl td.v-prize{font-family:var(--f-mono);color:var(--gold);font-size:11px}
+
+/* ===== Slide 13 作品集+90天 ===== */
+.port-row{display:grid;grid-template-columns:repeat(5,1fr);gap:10px;margin-top:8px;margin-bottom:32px}
+.port-chip{background:var(--bg-card);border:1px solid var(--border);border-radius:6px;padding:14px;text-align:center}
+.port-chip-num{font-family:var(--f-display);font-weight:700;font-size:24px;color:var(--accent);line-height:1;margin-bottom:6px}
+.port-chip-name{font-family:var(--f-display);font-size:13px;color:var(--text);font-weight:600;margin-bottom:4px}
+.port-chip-desc{font-size:10px;color:var(--text-3);line-height:1.5}
+.tl-title{font-family:var(--f-mono);font-size:11px;color:var(--text-3);letter-spacing:.1em;text-transform:uppercase;margin-bottom:14px}
+.timeline{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;position:relative}
+.timeline::before{content:"";position:absolute;top:18px;left:8%;right:8%;height:1px;background:var(--border)}
+.tl-step{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:16px;position:relative}
+.tl-dot{position:absolute;top:11px;left:50%;transform:translateX(-50%);width:14px;height:14px;background:var(--accent);border:3px solid var(--bg);border-radius:50%;box-shadow:0 0 0 1px var(--accent)}
+.tl-month{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.05em;margin-top:14px;margin-bottom:8px;text-align:center}
+.tl-title2{font-family:var(--f-display);font-weight:600;font-size:14px;color:var(--text);text-align:center;margin-bottom:10px}
+.tl-list{list-style:none;font-size:11px;color:var(--text-2);line-height:1.7;padding-left:0}
+.tl-list li{padding-left:12px;position:relative}
+.tl-list li::before{content:"\\B7";position:absolute;left:0;color:var(--teal);font-weight:700}
+
+/* ===== Slide 14 结语 ===== */
+.outro{display:flex;flex-direction:column;justify-content:center;height:100%;gap:48px}
+.outro-eyebrow{font-family:var(--f-mono);font-size:11px;color:var(--accent);letter-spacing:.15em;text-transform:uppercase;font-weight:600}
+.outro-quote{font-family:var(--f-display);font-style:italic;font-weight:500;font-size:54px;line-height:1.2;letter-spacing:-.02em;color:var(--text);max-width:1000px}
+.outro-quote em{color:var(--accent);font-style:italic;font-weight:700}
+.outro-tag{font-family:var(--f-body);font-size:16px;color:var(--text-2);line-height:1.6;max-width:720px}
+.outro-resources{display:grid;grid-template-columns:repeat(4,1fr);gap:14px}
+.outro-card{background:var(--bg-card);border:1px solid var(--border);border-radius:8px;padding:18px;text-decoration:none;color:inherit;transition:border-color .2s,transform .2s}
+.outro-card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.outro-card-tag{font-family:var(--f-mono);font-size:10px;color:var(--text-3);letter-spacing:.1em;margin-bottom:8px}
+.outro-card-name{font-family:var(--f-display);font-weight:700;font-size:15px;color:var(--text);margin-bottom:6px}
+.outro-card-url{font-family:var(--f-mono);font-size:11px;color:var(--teal);word-break:break-all}
+
+@media (max-width:900px){
+  .slide{padding:32px 28px 80px}
+  .cover-h1{font-size:64px}
+  .slide-title{font-size:28px}
+  .agenda,.route3,.six-grid,.path-grid,.path-grid.cols-2,.outro-resources,.port-row,.timeline{grid-template-columns:1fr}
+  .davinci{grid-template-columns:1fr}
+  .nav-dots{display:none}
+}
+</style>
+</head>
+<body>
+<div class="progress"><div class="progress-bar" id="progress"></div></div>
+<div class="deck" id="deck">
+
+<!-- ===== Slide 1 封面 ===== -->
+<section class="slide active" data-slide="1" data-title="封面">
+  <div class="slide-inner cover">
+    <h1 class="cover-h1">国产 AI <em>芯片</em></h1>
+    <div class="cover-sub">生态全景 × 开发者机会 · 14 张幻灯片完整指南</div>
+    <div class="cover-rule"></div>
+    <div class="cover-companies">
+      <div>华为昇腾 Huawei Ascend</div>
+      <div>寒武纪 Cambricon</div>
+      <div>海光信息 Hygon</div>
+      <div>摩尔线程 Moore Threads</div>
+      <div>沐曦股份 MetaX</div>
+      <div>壁仞科技 Biren</div>
+    </div>
+    <div class="cover-foot">
+      AI Presentation · 2026.06<br>
+      panzhipiao · 数据截至 2026 Q1
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 2 议程 ===== -->
+<section class="slide" data-slide="2" data-title="议程">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Agenda · 议程</div>
+    <h2 class="slide-title">用 <em>7 个章节</em>看完国产芯片全景</h2>
+    <p class="slide-sub">从市场格局到技术路线，再到个人开发者的实操路径</p>
+    <div class="agenda">
+      <div class="agenda-item"><div><div class="agenda-num">01</div></div><div><div class="agenda-text">六强格局速览</div><div class="agenda-note">2026Q1 营收、市值、市占率</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">02</div></div><div><div class="agenda-text">三大技术路线哲学</div><div class="agenda-note">ASIC / GPGPU / TPU 的根本差异</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">03</div></div><div><div class="agenda-text">代表架构深度解读</div><div class="agenda-note">达芬奇 3D Cube + 其余六家速览</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">04</div></div><div><div class="agenda-text">与 NVIDIA 的代际差距</div><div class="agenda-note">架构 / 制程 / 生态 三维评估</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">05</div></div><div><div class="agenda-text">场景最优解</div><div class="agenda-note">训练 / 推理 / 信创 / 边缘各取所需</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">06</div></div><div><div class="agenda-text">开发者机会地图 + 五大变现</div><div class="agenda-note">模型适配 / 算子 / 工具链 / 教育 / 开源</div></div></div>
+      <div class="agenda-item"><div><div class="agenda-num">07</div></div><div><div class="agenda-text">作品集 + 90 天行动计划</div><div class="agenda-note">从 0 到第一笔订单的实操路径</div></div></div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 3 六强格局 ===== -->
+<section class="slide" data-slide="3" data-title="六强格局">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Market Landscape · 市场格局</div>
+    <h2 class="slide-title">国产 AI 芯片 <em>六强</em>速览</h2>
+    <p class="slide-sub">2026Q1 营收、市值与市占率 — 华为占半壁江山，寒武纪率先盈利，海光营收最大</p>
+    <table class="tbl">
+      <thead><tr><th>公司</th><th>核心产品</th><th>路线</th><th>2026Q1 营收</th><th>市值</th><th>市占率</th></tr></thead>
+      <tbody>
+        <tr><td class="company">华为昇腾</td><td class="mono">910B / 950PR</td><td class="mono">达芬奇 NPU</td><td class="mono">—</td><td class="mono hi">非上市</td><td class="mono"><span class="num" style="font-size:14px">~50%</span><span class="share-bar"><span class="share-bar-fill" style="width:100%"></span></span></td></tr>
+        <tr><td class="company">寒武纪</td><td class="mono">思元 370 / 590</td><td class="mono">MLU ASIC</td><td class="mono hi">28.85 亿 +160%</td><td class="mono">7168 亿</td><td class="mono"><span class="num" style="font-size:14px">~15%</span><span class="share-bar"><span class="share-bar-fill" style="width:30%"></span></span></td></tr>
+        <tr><td class="company">海光信息</td><td class="mono">深算二号 / 三号</td><td class="mono">类 CUDA GPU</td><td class="mono hi">40.34 亿 +68%</td><td class="mono">6886 亿</td><td class="mono"><span class="num" style="font-size:14px">~10%</span><span class="share-bar"><span class="share-bar-fill" style="width:20%"></span></span></td></tr>
+        <tr><td class="company">摩尔线程</td><td class="mono">MTT S5000</td><td class="mono">MUSA 全功能 GPU</td><td class="mono">7.38 亿 +155%</td><td class="mono">3364 亿</td><td class="mono"><span class="num" style="font-size:14px">~8%</span><span class="share-bar"><span class="share-bar-fill" style="width:16%"></span></span></td></tr>
+        <tr><td class="company">沐曦股份</td><td class="mono">C500</td><td class="mono">自研 GPU</td><td class="mono">5.62 亿 +75%</td><td class="mono">3033 亿</td><td class="mono"><span class="num" style="font-size:14px">~3%</span><span class="share-bar"><span class="share-bar-fill" style="width:6%"></span></span></td></tr>
+        <tr><td class="company">壁仞科技</td><td class="mono">BR166 / BR20X</td><td class="mono">自研 GPU</td><td class="mono">2025 全年 10.35 亿</td><td class="mono">999 亿（港股）</td><td class="mono"><span class="num" style="font-size:14px">~2%</span><span class="share-bar"><span class="share-bar-fill" style="width:4%"></span></span></td></tr>
+      </tbody>
+    </table>
+    <div class="divider"></div>
+    <div style="display:flex;gap:32px;font-family:var(--f-mono);font-size:11px;color:var(--text-3);letter-spacing:.05em">
+      <span>NVIDIA / AMD 仍占 <span class="num num-gold" style="font-size:13px">~20%</span>（H20 等受限型号）</span>
+      <span>国产合计 <span class="num num-teal" style="font-size:13px">~80%</span> 加速卡出货量</span>
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== Slide 4 三大路线 ===== -->
+<section class="slide" data-slide="4" data-title="三大路线">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Three Philosophies · 三大路线哲学</div>
+    <h2 class="slide-title">AI 芯片只有 <em>三种活法</em></h2>
+    <p class="slide-sub">为 AI 专门设计，还是保留通用性？这是芯片公司最根本的战略选择</p>
+    <div class="route3">
+      <div class="route-card">
+        <div class="route-icon">A</div>
+        <div class="route-name">ASIC / NPU<small>专用架构</small></div>
+        <div class="route-companies">华为昇腾 · 寒武纪</div>
+        <div class="route-idea">为 AI 计算专门设计硬件，<b style="color:var(--teal)">牺牲通用性换取极致效率</b>。算子库和编译器与硬件深度耦合。</div>
+        <div class="route-analog">类比：专用跑车 — 赛道无敌，公路不行</div>
+      </div>
+      <div class="route-card">
+        <div class="route-icon">G</div>
+        <div class="route-name">GPGPU<small>通用 GPU 架构</small></div>
+        <div class="route-companies">海光 · 摩尔线程 · 沐曦 · 壁仞</div>
+        <div class="route-idea">保留 GPU 的通用并行计算能力，<b style="color:var(--teal)">兼顾 AI 与图形渲染</b>。多数兼容或近似 CUDA 编程模型。</div>
+        <div class="route-analog">类比：SUV — 全能选手，样样通但样样不极致</div>
+      </div>
+      <div class="route-card">
+        <div class="route-icon">T</div>
+        <div class="route-name">TPU<small>脉动阵列</small></div>
+        <div class="route-companies">中昊芯英</div>
+        <div class="route-idea">用脉动阵列做矩阵乘法，数据在阵列中"流动"计算，<b style="color:var(--teal)">极致能效</b>但应用极窄。</div>
+        <div class="route-analog">类比：高铁 — 特定路线最快，去不了小站</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 5 矩阵 ===== -->
+<section class="slide" data-slide="5" data-title="路线对比矩阵">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Trade-off Matrix · 路线特性矩阵</div>
+    <h2 class="slide-title">没有 <em>universally</em> 先进，只有场景最优</h2>
+    <p class="slide-sub">悬停单元格查看注释 · 三种路线在 6 个关键维度上的取舍</p>
+    <table class="matrix">
+      <thead><tr><th>维度</th><th>ASIC / NPU</th><th>GPGPU</th><th>TPU</th></tr></thead>
+      <tbody>
+        <tr>
+          <td>通用性</td>
+          <td class="matrix-cell cell-low" data-tip="只能跑 AI 算子，不能图形、不能游戏">低</td>
+          <td class="matrix-cell cell-hi" data-tip="AI / 图形 / 视频 / 通用并行皆可">高</td>
+          <td class="matrix-cell cell-low" data-tip="仅支持矩阵乘法及衍生算子">极低</td>
+        </tr>
+        <tr>
+          <td>AI 能效比</td>
+          <td class="matrix-cell cell-hi" data-tip="思元 370 推理能效是 H20 的 1.8 倍">极高</td>
+          <td class="matrix-cell cell-mid" data-tip="通用单元摊薄了 AI 效率">中等</td>
+          <td class="matrix-cell cell-hi" data-tip="TPU 能效 ~ 2.3× GPU">极高</td>
+        </tr>
+        <tr>
+          <td>图形渲染</td>
+          <td class="matrix-cell cell-low" data-tip="无渲染管线">不支持</td>
+          <td class="matrix-cell cell-hi" data-tip="摩尔线程是国内唯一全功能 GPU">支持</td>
+          <td class="matrix-cell cell-low" data-tip="无渲染管线">不支持</td>
+        </tr>
+        <tr>
+          <td>生态兼容</td>
+          <td class="matrix-cell cell-mid" data-tip="需重新适配 CANN / Cambricon SDK">需重写</td>
+          <td class="matrix-cell cell-hi" data-tip="海光 ROCm、摩尔 MUSIFY 可兼容 CUDA">兼容 CUDA</td>
+          <td class="matrix-cell cell-low" data-tip="需要全新软件栈">需新生态</td>
+        </tr>
+        <tr>
+          <td>算法适应性</td>
+          <td class="matrix-cell cell-low" data-tip="ASIC 的宿命 — 算法变则硬件可能过时">差</td>
+          <td class="matrix-cell cell-hi" data-tip="灵活适配新算法">好</td>
+          <td class="matrix-cell cell-low" data-tip="仅适合矩阵密集型负载">差</td>
+        </tr>
+        <tr>
+          <td>代表应用</td>
+          <td class="matrix-cell" style="color:var(--text-2)" data-tip="大模型训练 / 智算中心">大模型训练</td>
+          <td class="matrix-cell" style="color:var(--text-2)" data-tip="通用 AI + 图形 + 渲染">通用 AI 计算</td>
+          <td class="matrix-cell" style="color:var(--text-2)" data-tip="低成本高吞吐推理">特定推理</td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+
+<!-- ===== Slide 6 达芬奇架构 ===== -->
+<section class="slide" data-slide="6" data-title="华为达芬奇">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Architecture Deep Dive · 华为昇腾</div>
+    <h2 class="slide-title">达芬奇 <em>3D Cube</em> 架构</h2>
+    <p class="slide-sub">国产训练算力龙头，全栈自主可控：芯片 → CANN → MindSpore 端到端优化</p>
+    <div class="davinci">
+      <div class="davinci-diagram">
+        <div class="davinci-title">达芬奇 AI Core</div>
+        <div class="davinci-row">
+          <div class="davinci-cube">Cube</div>
+          <div class="davinci-cube">Cube</div>
+          <div class="davinci-cube">Cube</div>
+        </div>
+        <div class="davinci-label">3D 矩阵乘法阵列 · 每周期 4096 MAC</div>
+        <div style="height:14px"></div>
+        <div class="davinci-row">
+          <div class="davinci-aux"><b>向量单元</b>Vector</div>
+          <div class="davinci-aux"><b>标量单元</b>Scalar</div>
+        </div>
+        <div class="davinci-label">辅助计算单元</div>
+      </div>
+      <div class="davinci-points">
+        <div class="dp-item"><b>3D Cube 计算阵列</b>专为矩阵乘法设计，Transformer Attention 计算理论优势<span class="dp-num">4096 MAC/cycle</span></div>
+        <div class="dp-item"><b>统一精度支持</b>FP64 → FP32 → FP16 → BF16 → INT8 → INT4，训练推理一体</div>
+        <div class="dp-item"><b>全栈可控</b>从芯片指令集到 CANN 编译器到 MindSpore 框架，端到端优化<span class="dp-num">~50% 市占率</span></div>
+        <div class="dp-item"><b>万卡集群方案</b>字节跳动 2025 年采购约 20 万片 910B</div>
+        <div class="dp-short"><b>根本短板</b>生态封闭、面向中国市场为主；通用性差 — 不能跑图形渲染、不能跑 CUDA 代码</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 7 六家速览 ===== -->
+<section class="slide" data-slide="7" data-title="其余六家">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Snapshot · 其余六家</div>
+    <h2 class="slide-title">寒武纪、海光、摩尔、沐曦、壁仞、中昊 <em>核心一图流</em></h2>
+    <p class="slide-sub">每家公司的杀手锏与致命短板 — 选型时直接参考</p>
+    <div class="six-grid">
+      <div class="six-card">
+        <div class="six-tag">推理王者 · ASIC</div>
+        <div class="six-name">寒武纪 <span class="six-num">28.85 亿</span></div>
+        <div class="six-pro">思元 370 推理能效是 H20 的 <b>1.8 倍</b>，2026Q1 率先规模化盈利 10.13 亿</div>
+        <div class="six-con"><b>短板：</b>训练能力弱（590 仅 A100 的 80%），ASIC 算法适应性风险</div>
+      </div>
+      <div class="six-card">
+        <div class="six-tag">生态兼容 · 类 CUDA</div>
+        <div class="six-name">海光信息 <span class="six-num">40.34 亿</span></div>
+        <div class="six-pro">类 CUDA 架构，<b>迁移成本最低</b>；与中科曙光形成"芯片-服务器-算力"闭环</div>
+        <div class="six-con"><b>短板：</b>14nm 制程落后，性能受限于"兼容"设计</div>
+      </div>
+      <div class="six-card">
+        <div class="six-tag">全功能 GPU · MUSA</div>
+        <div class="six-name">摩尔线程 <span class="six-num">+155%</span></div>
+        <div class="six-pro">国内唯一全功能 GPU（AI+图形+渲染+视频），<b>FP8 原生支持</b>，信创 60%+</div>
+        <div class="six-con"><b>短板：</b>12nm 制程落后 2-3 代，MUSA 开发者 10 万 vs CUDA 400 万</div>
+      </div>
+      <div class="six-card">
+        <div class="six-tag">万卡集群 · 自研 GPU</div>
+        <div class="six-name">沐曦股份 <span class="six-num">5.62 亿</span></div>
+        <div class="six-pro">C500 推理性能达 H100 的 <b>110%</b>（INT8），128 卡液冷集群已部署</div>
+        <div class="six-con"><b>短板：</b>训练效率仅 65%，仍处亏损状态</div>
+      </div>
+      <div class="six-card">
+        <div class="six-tag">峰值算力 · 7nm Chiplet</div>
+        <div class="six-name">壁仞科技 <span class="six-num">10.35 亿</span></div>
+        <div class="six-pro">BR166/BR20X <b>峰值算力国际领先</b>，7nm + Chiplet 设计，港股 GPU 第一股</div>
+        <div class="six-con"><b>短板：</b>生态建设滞后，MFU（模型算力利用率）偏低</div>
+      </div>
+      <div class="six-card">
+        <div class="six-tag">国产 TPU · 脉动阵列</div>
+        <div class="six-name">中昊芯英 <span class="six-num">2.3×</span></div>
+        <div class="six-pro">脉动阵列能效比是 GPU 的 <b>2.3 倍</b>（1.28 vs 0.56 TOPS/W），天津移动 TPU 智算中心已投运</div>
+        <div class="six-con"><b>短板：</b>生态从零开始，通用性几乎为零</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+
+<!-- ===== Slide 8 代际差距 ===== -->
+<section class="slide" data-slide="8" data-title="代际差距">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Gap vs NVIDIA · 代际差距</div>
+    <h2 class="slide-title">与 NVIDIA 的 <em>三维代差</em></h2>
+    <p class="slide-sub">悬停查看具体代差 · 架构、制程、生态 — 生态是最难追的那一维</p>
+    <div class="gap-list">
+      <div class="gap-row">
+        <div class="gap-name">华为昇腾</div>
+        <div class="gap-bar-wrap" data-tip="架构代差 ~1 代"><div class="gap-bar-fill arch" style="width:25%"></div><span class="gap-bar-label">架构 ~1 代</span></div>
+        <div class="gap-bar-wrap" data-tip="制程代差 ~1-2 代"><div class="gap-bar-fill proc" style="width:40%"></div><span class="gap-bar-label">制程 ~1-2 代</span></div>
+        <div class="gap-bar-wrap" data-tip="生态代差 ~2-3 代"><div class="gap-bar-fill eco" style="width:70%"></div><span class="gap-bar-label">生态 ~2-3 代</span></div>
+      </div>
+      <div class="gap-row">
+        <div class="gap-name">寒武纪</div>
+        <div class="gap-bar-wrap" data-tip="架构代差 ~1.5 代"><div class="gap-bar-fill arch" style="width:38%"></div><span class="gap-bar-label">架构 ~1.5 代</span></div>
+        <div class="gap-bar-wrap" data-tip="制程代差 ~1-2 代"><div class="gap-bar-fill proc" style="width:40%"></div><span class="gap-bar-label">制程 ~1-2 代</span></div>
+        <div class="gap-bar-wrap" data-tip="生态代差 ~3 代"><div class="gap-bar-fill eco" style="width:80%"></div><span class="gap-bar-label">生态 ~3 代</span></div>
+      </div>
+      <div class="gap-row">
+        <div class="gap-name">海光信息</div>
+        <div class="gap-bar-wrap" data-tip="架构代差 ~1 代"><div class="gap-bar-fill arch" style="width:25%"></div><span class="gap-bar-label">架构 ~1 代</span></div>
+        <div class="gap-bar-wrap" data-tip="制程代差 ~2-3 代（14nm）"><div class="gap-bar-fill proc" style="width:65%"></div><span class="gap-bar-label">制程 ~2-3 代</span></div>
+        <div class="gap-bar-wrap" data-tip="生态代差 ~1 代（兼容 CUDA）"><div class="gap-bar-fill eco" style="width:22%"></div><span class="gap-bar-label">生态 ~1 代 ★</span></div>
+      </div>
+      <div class="gap-row">
+        <div class="gap-name">摩尔线程</div>
+        <div class="gap-bar-wrap" data-tip="架构代差 ~1 代"><div class="gap-bar-fill arch" style="width:25%"></div><span class="gap-bar-label">架构 ~1 代</span></div>
+        <div class="gap-bar-wrap" data-tip="制程代差 ~2-3 代（12nm）"><div class="gap-bar-fill proc" style="width:60%"></div><span class="gap-bar-label">制程 ~2-3 代</span></div>
+        <div class="gap-bar-wrap" data-tip="生态代差 ~2-3 代"><div class="gap-bar-fill eco" style="width:65%"></div><span class="gap-bar-label">生态 ~2-3 代</span></div>
+      </div>
+      <div class="gap-row">
+        <div class="gap-name">沐曦 / 壁仞</div>
+        <div class="gap-bar-wrap" data-tip="架构代差 ~1 代"><div class="gap-bar-fill arch" style="width:25%"></div><span class="gap-bar-label">架构 ~1 代</span></div>
+        <div class="gap-bar-wrap" data-tip="制程代差 ~1-2 代"><div class="gap-bar-fill proc" style="width:38%"></div><span class="gap-bar-label">制程 ~1-2 代</span></div>
+        <div class="gap-bar-wrap" data-tip="生态代差 ~3 代"><div class="gap-bar-fill eco" style="width:80%"></div><span class="gap-bar-label">生态 ~3 代</span></div>
+      </div>
+    </div>
+    <div class="gap-legend">
+      <span><i style="background:var(--accent)"></i>架构代差</span>
+      <span><i style="background:var(--gold)"></i>制程代差</span>
+      <span><i style="background:var(--red)"></i>生态代差（最难追）</span>
+      <span style="margin-left:auto;color:var(--text-3)">★ 海光生态代差最小 — 类 CUDA 路线</span>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 9 场景最优解 ===== -->
+<section class="slide" data-slide="9" data-title="场景最优解">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Best Fit · 场景最优解</div>
+    <h2 class="slide-title">每种场景都有 <em>明确赢家</em></h2>
+    <p class="slide-sub">不同需求选不同芯片 — 没有一颗芯片能通吃所有场景</p>
+    <div class="pair-list">
+      <div class="pair-row">
+        <div class="pair-scene">大规模 LLM 训练</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">华为昇腾 (ASIC/NPU)</div>
+        <div class="pair-reason">万卡集群效率最高、达芬奇架构能效比、全栈优化闭环</div>
+      </div>
+      <div class="pair-row">
+        <div class="pair-scene">云端推理（高吞吐）</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">寒武纪 (ASIC)</div>
+        <div class="pair-reason">极致能效比，部署成本最低，思元 370 是 H20 的 1.8 倍</div>
+      </div>
+      <div class="pair-row">
+        <div class="pair-scene">快速替代 NVIDIA</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">海光 (类 CUDA GPGPU)</div>
+        <div class="pair-reason">迁移成本最低，PyTorch/TF 代码几乎无需修改，风险最小</div>
+      </div>
+      <div class="pair-row">
+        <div class="pair-scene">信创 / 全能替代</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">摩尔线程 (全功能 GPU)</div>
+        <div class="pair-reason">一芯覆盖 AI+图形+渲染+视频，信创市占 60%+，AI PC 首选</div>
+      </div>
+      <div class="pair-row">
+        <div class="pair-scene">边缘 / 终端 AI</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">寒武纪 (ASIC)</div>
+        <div class="pair-reason">低功耗、小体积，端边云全覆盖的产品矩阵</div>
+      </div>
+      <div class="pair-row">
+        <div class="pair-scene">超算 / 科研</div>
+        <div class="pair-arrow">&rarr;</div>
+        <div class="pair-route">壁仞 / 沐曦 (高端 GPGPU)</div>
+        <div class="pair-reason">峰值算力高，浮点性能强，7nm + Chiplet 设计</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 10 开发者机会 ===== -->
+<section class="slide" data-slide="10" data-title="开发者机会">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Opportunity Map · 开发者机会</div>
+    <h2 class="slide-title">国产芯片生态的 <em>四大缺口</em></h2>
+    <p class="slide-sub">点击单元格展开详情 · X 轴：技术门槛 / Y 轴：收入潜力</p>
+    <div class="quad-wrap">
+      <div class="quad-axis y">收入潜力 &uarr;</div>
+      <div class="quad-axis x">技术门槛 &rarr;</div>
+      <div class="quad">
+        <div class="quad-cell" data-quad="1">
+          <div class="quad-tag">高收入 · 低门槛</div>
+          <div class="quad-name">模型适配</div>
+          <div class="quad-stat">需求最大 · 变现最快 · 月入 2-5 万</div>
+          <ul class="quad-list">
+            <li>把 HuggingFace 模型移植到国产芯片</li>
+            <li>精度对齐（误差 &lt; 1e-5）</li>
+            <li>推理优化 + 部署方案</li>
+          </ul>
+          <div class="quad-detail">真实案例：把 DeepSeek-V3 适配到昇腾 910B，开源后获华为众智计划资助 5 万元；"LLaMA 国产芯片适配" GitHub 2k Star，被沐曦/摩尔线程聘为外部顾问</div>
+        </div>
+        <div class="quad-cell" data-quad="2">
+          <div class="quad-tag">高收入 · 高门槛</div>
+          <div class="quad-name">算子开发</div>
+          <div class="quad-stat">技术最深 · 壁垒最高 · 单算子 3-10k</div>
+          <ul class="quad-list">
+            <li>缺失算子补全（CANN 覆盖 ~70%）</li>
+            <li>Ascend C / MUSA / HIP 性能优化</li>
+            <li>融合算子 + 自定义算子</li>
+          </ul>
+          <div class="quad-detail">真实案例：为昇腾实现 FlashAttention-2 Ascend C 版本，被收录进 CANN 官方仓库获 10 万奖金；需掌握 C++、并行计算、芯片架构</div>
+        </div>
+        <div class="quad-cell" data-quad="3">
+          <div class="quad-tag">长尾收入 · 低门槛</div>
+          <div class="quad-name">教育内容</div>
+          <div class="quad-stat">门槛最低 · 长期复利 · 课程 5-15 万/门</div>
+          <ul class="quad-list">
+            <li>B 站 / 知乎 技术教程</li>
+            <li>付费课程：CANN 入门、MUSA 实战</li>
+            <li>技术书籍 + 训练营</li>
+          </ul>
+          <div class="quad-detail">真实案例："手把手教你昇腾推理部署"B 站百万播放 + 课程营收 30 万；某博主深耕国产 AI 芯片成"国产 GPU 第一自媒体"</div>
+        </div>
+        <div class="quad-cell" data-quad="4">
+          <div class="quad-tag">中收入 · 可持续</div>
+          <div class="quad-name">工具链</div>
+          <div class="quad-stat">门槛中等 · 收入稳定 · 订阅 500-2000/月</div>
+          <ul class="quad-list">
+            <li>性能 Profiler 可视化</li>
+            <li>模型转换器（ONNX/TF → 国产）</li>
+            <li>Docker 镜像 + K8s 部署脚本</li>
+          </ul>
+          <div class="quad-detail">真实案例："昇腾 NPU 性能可视化工具"开源后获华为赞助，成立公司年营收百万；"国产 AI 芯片 Docker 镜像集合"被多家智算中心采用</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 11 变现路径 1-3 ===== -->
+<section class="slide" data-slide="11" data-title="变现路径 1-3">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Monetization Paths · 1 / 2</div>
+    <h2 class="slide-title">个人开发者的 <em>5 条变现路径</em>（上）</h2>
+    <p class="slide-sub">每条都有真实样本 — 选你能力圈最近的那条切入</p>
+    <div class="path-grid">
+      <div class="path-card">
+        <div class="path-head"><div class="path-name">技术服务 · 咨询</div><div class="path-no">PATH 01</div></div>
+        <div class="path-desc">为传统企业、智算中心提供"国产化迁移咨询 + 适配实施"。客户痛点：有 NVIDIA 代码 + 国资委政策 + 不知道怎么迁。</div>
+        <div class="path-items">
+          <div class="path-item"><span class="path-item-name">单项目客单</span><span class="path-item-price">5-50 万</span></div>
+          <div class="path-item"><span class="path-item-name">交付周期</span><span class="path-item-price">1-3 月</span></div>
+          <div class="path-item"><span class="path-item-name">能力要求</span><span class="path-item-price">中-高</span></div>
+        </div>
+        <div class="path-case">真实案例：<b>北京某独立开发者</b>承接券商研究所昇腾迁移咨询，3 个月交付，单项目 38 万。</div>
+      </div>
+      <div class="path-card">
+        <div class="path-head"><div class="path-name">开源 + 厂商激励</div><div class="path-no">PATH 02</div></div>
+        <div class="path-desc">华为众智、寒武纪开源计划、摩尔线程 MUSA Pioneer — 厂商真金白银买你的代码贡献。</div>
+        <div class="path-items">
+          <div class="path-item"><span class="path-item-name">单项目奖金</span><span class="path-item-price">1-50 万</span></div>
+          <div class="path-item"><span class="path-item-name">附带收益</span><span class="path-item-price">品牌 + offer</span></div>
+          <div class="path-item"><span class="path-item-name">能力要求</span><span class="path-item-price">中</span></div>
+        </div>
+        <div class="path-case">真实案例：<b>FlashAttention-2 Ascend C 移植</b>被收录进 CANN 官方仓库，作者获 10 万奖金 + 华为 offer。</div>
+      </div>
+      <div class="path-card">
+        <div class="path-head"><div class="path-name">SaaS / 工具产品</div><div class="path-no">PATH 03</div></div>
+        <div class="path-desc">把工具链做成 SaaS：性能分析、迁移辅助、模型市场、推理 API 网关 — 长期 MRR 不依赖单客。</div>
+        <div class="path-items">
+          <div class="path-item"><span class="path-item-name">订阅价</span><span class="path-item-price">500-2000/月</span></div>
+          <div class="path-item"><span class="path-item-name">MRR 天花板</span><span class="path-item-price">1-10 万</span></div>
+          <div class="path-item"><span class="path-item-name">能力要求</span><span class="path-item-price">中-高 + 产品</span></div>
+        </div>
+        <div class="path-case">真实案例：<b>NPU Profiler Cloud</b> 由前华为工程师独立开发，年营收破百万，被多家智算中心采用。</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 12 变现路径 4-5 + 厂商激励表 ===== -->
+<section class="slide" data-slide="12" data-title="变现路径 4-5">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Monetization Paths · 2 / 2</div>
+    <h2 class="slide-title">教育内容 + 加入厂商生态 + <em>激励计划</em></h2>
+    <p class="slide-sub">长尾复利 + 厂商真金白银的扶持名单</p>
+    <div class="path-grid cols-2">
+      <div class="path-card">
+        <div class="path-head"><div class="path-name">教育内容 · 自媒体</div><div class="path-no">PATH 04</div></div>
+        <div class="path-desc">国产芯片几乎没有中文系统教程 — 现在做内容是 2014 年做深度学习教程的时机。复利曲线最陡。</div>
+        <div class="path-items">
+          <div class="path-item"><span class="path-item-name">月度收入</span><span class="path-item-price">1-10 万</span></div>
+          <div class="path-item"><span class="path-item-name">付费课程</span><span class="path-item-price">5-15 万/门</span></div>
+          <div class="path-item"><span class="path-item-name">能力要求</span><span class="path-item-price">中 + 表达</span></div>
+        </div>
+        <div class="path-case">真实案例：<b>"手把手教你昇腾推理部署"</b> B 站破百万播放，配套训练营营收 30 万，作者成为"国产 GPU 第一自媒体"。</div>
+      </div>
+      <div class="path-card">
+        <div class="path-head"><div class="path-name">加入厂商生态团队</div><div class="path-no">PATH 05</div></div>
+        <div class="path-desc">华为 2012 实验室、寒武纪算子团队、摩尔线程 MUSA、沐曦 MXMACA — 都在抢有国产芯片实战的工程师。</div>
+        <div class="path-items">
+          <div class="path-item"><span class="path-item-name">总包年薪</span><span class="path-item-price">80-200 万</span></div>
+          <div class="path-item"><span class="path-item-name">岗位</span><span class="path-item-price">编译器 / DevRel / SA</span></div>
+          <div class="path-item"><span class="path-item-name">能力要求</span><span class="path-item-price">高</span></div>
+        </div>
+        <div class="path-case">真实案例：<b>多位前 NVIDIA / 商汤工程师</b>因国产芯片项目经验被华为、寒武纪以 1.5-2× 包跳过去。</div>
+      </div>
+    </div>
+    <table class="vendor-tbl">
+      <thead><tr><th>厂商</th><th>计划名称</th><th>资助 / 奖励</th><th>主要方向</th></tr></thead>
+      <tbody>
+        <tr><td class="v-name">华为昇腾</td><td>众智计划</td><td class="v-prize">单项目 1-50 万</td><td>算子、模型、行业应用</td></tr>
+        <tr><td class="v-name">寒武纪</td><td>寒武纪开源计划</td><td class="v-prize">1-30 万 + 硬件</td><td>MagicMind 算子、模型适配</td></tr>
+        <tr><td class="v-name">摩尔线程</td><td>MUSA Pioneer</td><td class="v-prize">硬件 + 现金</td><td>MUSA 算子、AI 应用、游戏</td></tr>
+        <tr><td class="v-name">海光信息</td><td>DCU 生态计划</td><td class="v-prize">合作 + 算力券</td><td>HIP 算子、迁移工具链</td></tr>
+        <tr><td class="v-name">沐曦</td><td>MXMACA 开发者</td><td class="v-prize">硬件赞助 + 联合开发</td><td>大模型推理优化</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<!-- ===== Slide 13 作品集 + 90 天 ===== -->
+<section class="slide" data-slide="13" data-title="作品集 + 90 天">
+  <div class="slide-inner">
+    <div class="slide-eyebrow">Portfolio + 90-Day Plan</div>
+    <h2 class="slide-title">作品集 <em>5 要素</em> + 90 天起步路线图</h2>
+    <p class="slide-sub">先建立有信号的作品集，再谈变现 — 顺序千万不要颠倒</p>
+    <div class="port-row">
+      <div class="port-chip">
+        <div class="port-chip-num">01</div>
+        <div class="port-chip-name">深度对比文</div>
+        <div class="port-chip-desc">在 4 家国产芯片上跑同一模型，性能 / 易用性 / 坑全记录</div>
+      </div>
+      <div class="port-chip">
+        <div class="port-chip-num">02</div>
+        <div class="port-chip-name">GitHub 项目</div>
+        <div class="port-chip-desc">开源算子 / 适配 / 工具 — Star &gt; 100 即可作为名片</div>
+      </div>
+      <div class="port-chip">
+        <div class="port-chip-num">03</div>
+        <div class="port-chip-name">公开 Benchmark</div>
+        <div class="port-chip-desc">多芯片可复现的 benchmark — 厂商和媒体都会引用</div>
+      </div>
+      <div class="port-chip">
+        <div class="port-chip-num">04</div>
+        <div class="port-chip-name">技术博客</div>
+        <div class="port-chip-desc">持续输出 10+ 篇深度长文 — 个人品牌的核心资产</div>
+      </div>
+      <div class="port-chip">
+        <div class="port-chip-num">05</div>
+        <div class="port-chip-name">公开分享</div>
+        <div class="port-chip-desc">线下 meetup / 线上直播 — 圈内见过你的人才会推你</div>
+      </div>
+    </div>
+    <div class="tl-title">90-Day Sprint · 起步时间线</div>
+    <div class="timeline">
+      <div class="tl-step">
+        <div class="tl-dot"></div>
+        <div class="tl-month">Day 1 — 30</div>
+        <div class="tl-title2">选定一家芯片深耕</div>
+        <ul class="tl-list">
+          <li>推荐昇腾（生态最全）或海光（迁移最易）</li>
+          <li>跑通官方 demo，调通 Llama-3-8B 推理</li>
+          <li>把全过程写成 3 篇博客</li>
+        </ul>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot"></div>
+        <div class="tl-month">Day 31 — 60</div>
+        <div class="tl-title2">做出第一个开源项目</div>
+        <ul class="tl-list">
+          <li>填一个生态空白：算子 / 适配 / 工具</li>
+          <li>目标 GitHub 50+ Star</li>
+          <li>申请厂商激励计划（众智 / Pioneer）</li>
+        </ul>
+      </div>
+      <div class="tl-step">
+        <div class="tl-dot"></div>
+        <div class="tl-month">Day 61 — 90</div>
+        <div class="tl-title2">建立行业能见度</div>
+        <ul class="tl-list">
+          <li>B 站 / 知乎 / 公众号 持续输出</li>
+          <li>参加厂商技术大会 + 线下 meetup</li>
+          <li>主动联系厂商 DevRel — 首单 / offer 通常 90 天内</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===== Slide 14 结语 + 资源 ===== -->
+<section class="slide" data-slide="14" data-title="结语 + 资源">
+  <div class="slide-inner">
+    <div class="outro">
+      <div>
+        <div class="outro-eyebrow">CLOSING · 写在最后</div>
+        <h2 class="outro-quote">国产 AI 芯片是未来 <em>10 年</em><br/>最确定的红利窗口</h2>
+        <p class="outro-tag">生态代差是用人堆出来的 — 每一个迁移过的模型、每一个补全的算子、每一篇真实的实战博客，都在帮国产芯片缩短这段距离。<b style="color:var(--teal);font-weight:500">你既是受益者，也是建设者。</b></p>
+      </div>
+      <div>
+        <div class="tl-title" style="margin-bottom:14px">官方开发者社区 · 点击访问</div>
+        <div class="outro-resources">
+          <a class="outro-card" href="https://www.hiascend.com" target="_blank" rel="noopener">
+            <div class="outro-card-tag">CANN · MindSpore</div>
+            <div class="outro-card-name">昇腾社区</div>
+            <div class="outro-card-url">hiascend.com</div>
+          </a>
+          <a class="outro-card" href="https://developer.mthreads.com" target="_blank" rel="noopener">
+            <div class="outro-card-tag">MUSA · 全功能 GPU</div>
+            <div class="outro-card-name">摩尔线程</div>
+            <div class="outro-card-url">developer.mthreads.com</div>
+          </a>
+          <a class="outro-card" href="https://developer.cambricon.com" target="_blank" rel="noopener">
+            <div class="outro-card-tag">MagicMind · 推理 ASIC</div>
+            <div class="outro-card-name">寒武纪</div>
+            <div class="outro-card-url">developer.cambricon.com</div>
+          </a>
+          <a class="outro-card" href="https://developer.hygon.cn" target="_blank" rel="noopener">
+            <div class="outro-card-tag">DCU · 类 CUDA</div>
+            <div class="outro-card-name">海光信息</div>
+            <div class="outro-card-url">developer.hygon.cn</div>
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+</div><!-- /.deck -->
+
+<!-- ===== 底部导航 ===== -->
+<nav class="nav">
+  <button class="nav-btn" id="btnPrev" type="button">&larr; 上一页</button>
+  <div class="nav-page"><span class="cur" id="curIdx">1</span> / <span id="totIdx">14</span> &middot; <span id="curTitle">封面</span></div>
+  <button class="nav-btn" id="btnNext" type="button">下一页 &rarr;</button>
+</nav>
+<aside class="nav-dots" id="navDots"></aside>
+
+<script>
+(function(){
+  var slides = document.querySelectorAll('.slide');
+  var total = slides.length;
+  var cur = 0;
+  var progress = document.getElementById('progress');
+  var curIdx = document.getElementById('curIdx');
+  var totIdx = document.getElementById('totIdx');
+  var curTitle = document.getElementById('curTitle');
+  var navDots = document.getElementById('navDots');
+  totIdx.textContent = total;
+
+  /* 构建右侧缩略点 */
+  for (var i = 0; i < total; i++) {
+    var dot = document.createElement('button');
+    dot.className = 'nav-dot';
+    dot.setAttribute('type', 'button');
+    dot.setAttribute('data-idx', i);
+    dot.setAttribute('title', (i+1) + '. ' + slides[i].getAttribute('data-title'));
+    navDots.appendChild(dot);
+  }
+  var dots = navDots.querySelectorAll('.nav-dot');
+
+  function go(idx) {
+    if (idx < 0) idx = 0;
+    if (idx > total - 1) idx = total - 1;
+    slides[cur].classList.remove('active');
+    dots[cur].classList.remove('active');
+    cur = idx;
+    slides[cur].classList.add('active');
+    dots[cur].classList.add('active');
+    curIdx.textContent = cur + 1;
+    curTitle.textContent = slides[cur].getAttribute('data-title');
+    progress.style.width = ((cur + 1) / total * 100) + '%';
+  }
+
+  document.getElementById('btnPrev').addEventListener('click', function(){ go(cur - 1); });
+  document.getElementById('btnNext').addEventListener('click', function(){ go(cur + 1); });
+  for (var j = 0; j < dots.length; j++) {
+    dots[j].addEventListener('click', function(e){
+      go(parseInt(e.currentTarget.getAttribute('data-idx'), 10));
+    });
+  }
+
+  document.addEventListener('keydown', function(e){
+    var k = e.key;
+    if (k === 'ArrowRight' || k === 'PageDown' || k === ' ') { e.preventDefault(); go(cur + 1); }
+    else if (k === 'ArrowLeft' || k === 'PageUp') { e.preventDefault(); go(cur - 1); }
+    else if (k === 'Home') { go(0); }
+    else if (k === 'End') { go(total - 1); }
+    else if (/^[1-9]$/.test(k)) { go(parseInt(k, 10) - 1); }
+  });
+
+  /* Slide 10 四象限点击展开 */
+  var quadCells = document.querySelectorAll('.quad-cell');
+  for (var q = 0; q < quadCells.length; q++) {
+    quadCells[q].addEventListener('click', function(e){
+      e.currentTarget.classList.toggle('expanded');
+    });
+  }
+
+  /* 初始化首页 */
+  dots[0].classList.add('active');
+  progress.style.width = (1 / total * 100) + '%';
+})();
+</script>
+
+</body>
+</html>
