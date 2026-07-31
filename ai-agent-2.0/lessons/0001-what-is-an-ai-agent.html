@@ -1,0 +1,286 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 1 课 · 什么是 AI Agent？</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 1 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">什么是 AI Agent？</h1>
+  <p class="lesson-meta">一个能跑的最小心智模型 · 约 8 分钟</p>
+</header>
+
+<main>
+
+<h2>先记住一句话</h2>
+
+<p>
+  <strong>Agent = LLM + 工具 + 循环。</strong>
+  就这一句话，剩下都是细节。
+</p>
+
+<p>
+  如果你只能从这堂课带走一样东西，就带这句。它解释了为什么 ChatGPT 的对话框不是 Agent，也解释了为什么 AutoGPT 会让很多人失望——他们以为 Agent 是「更聪明的 LLM」，其实 Agent 是「把 LLM 套进一个会循环、能用工具的程序里」。
+</p>
+
+<h2>为什么不能直接调 LLM API？</h2>
+
+<p>
+  你已经会用 ChatGPT 了。你也听说过可以写代码调用 LLM API——给它一句话，它回一句话，就像调用一个函数：
+</p>
+
+<pre><code><span class="c"># 这不是 Agent，这只是一次 LLM 调用</span>
+response = client.chat.completions.create(
+    model=<span class="s">"gpt-4o-mini"</span>,
+    messages=[{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京天气怎么样？"</span>}]
+)
+print(response.choices[0].message.content)</code></pre>
+
+<p>
+  问题来了：LLM 的训练数据是冻结的，它不知道<strong>此刻</strong>北京的天气。它会编一个，或者承认不知道。无论哪种，你都没拿到真实答案。
+</p>
+
+<blockquote>
+  <p>
+    LLM 是一个<strong>无状态、文本进文本出</strong>的函数。它没有眼睛、没有手、没有记忆、不知道现在几点。它唯一能做的事，就是根据文本预测下一段文本。
+  </p>
+</blockquote>
+
+<p>
+  如果你想让「AI」真的帮你查天气、读文件、发邮件、订机票——你必须给它<strong>工具</strong>，并让它<strong>自己决定什么时候用、用哪个、用几次</strong>。这就是 Agent 在做的事。
+</p>
+
+<h2>Agent 的三个要素</h2>
+
+<p>把这句话拆开看：</p>
+
+<table>
+  <thead>
+    <tr><th>要素</th><th>作用</th><th>没有它会怎样</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>LLM</strong></td>
+      <td>大脑：理解任务、决定下一步、生成回答</td>
+      <td>什么都做不了，连「下一步该干嘛」都想不出来</td>
+    </tr>
+    <tr>
+      <td><strong>工具（Tool）</strong></td>
+      <td>手脚：查天气、读文件、搜索、写代码……任何 Python 函数都能变成工具</td>
+      <td>Agent 只能嘴上说，不能真的动手</td>
+    </tr>
+    <tr>
+      <td><strong>循环（Loop）</strong></td>
+      <td>把「想 → 做 → 看结果」反复执行，直到任务完成</td>
+      <td>只能回答一个问题、调一次工具，就结束——那叫工作流，不叫 Agent</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  Anthropic 在 <a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank">Building Effective Agents</a> 里给了一个干净的判据：
+</p>
+
+<blockquote>
+  <p>
+    <strong>谁在控制路径？</strong> 如果是代码写死了步骤，那是 Workflow；如果是 LLM 自己决定下一步走哪，那是 Agent。
+  </p>
+</blockquote>
+
+<h2>一个能跑的最小 Agent</h2>
+
+<p>
+  下面这段代码不到 30 行，但它是一个<strong>真 Agent</strong>：它会自己决定要不要调工具、调几次，然后给出最终答案。先扫一眼，不用全懂，下面会逐段讲。
+</p>
+
+<pre><code><span class="c"># 最小 Agent：能查天气，能多步推理</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()  <span class="c"># 需要 OPENAI_API_KEY 环境变量</span>
+
+<span class="c"># 1. 定义工具：一个普通 Python 函数</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    <span class="c"># 真实项目里这里会调天气 API，这里先用假数据</span>
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="c"># 2. 把工具的"说明书"告诉 LLM</span>
+tools = [{
+    <span class="s">"type"</span>: <span class="s">"function"</span>,
+    <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询某个城市的实时天气"</span>,
+        <span class="s">"parameters"</span>: {
+            <span class="s">"type"</span>: <span class="s">"object"</span>,
+            <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+            <span class="s">"required"</span>: [<span class="s">"city"</span>]
+        }
+    }
+}]
+
+<span class="c"># 3. Agent 循环</span>
+messages = [{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京和上海今天哪个更热？"</span>}]
+
+<span class="k">while</span> True:
+    resp = client.chat.completions.create(
+        model=<span class="s">"gpt-4o-mini"</span>,
+        messages=messages,
+        tools=tools,
+    )
+    msg = resp.choices[0].message
+    messages.append(msg)
+
+    <span class="c"># 如果 LLM 没要求调工具，说明它要直接回答 → 结束</span>
+    <span class="k">if not</span> msg.tool_calls:
+        print(msg.content)
+        <span class="k">break</span>
+
+    <span class="c"># 如果 LLM 要求调工具，就执行它指定的工具，把结果喂回去</span>
+    <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+        args = json.loads(call.function.arguments)
+        result = get_weather(**args)
+        messages.append({
+            <span class="s">"role"</span>: <span class="s">"tool"</span>,
+            <span class="s">"tool_call_id"</span>: call.id,
+            <span class="s">"content"</span>: result
+        })</code></pre>
+
+<h3>逐段拆解</h3>
+
+<p>
+  <strong>第 1 步：工具就是普通函数。</strong>
+  <code>get_weather</code> 和你平时写的函数没区别。Agent 之所以能「动手」，全靠这些函数。后面你会把搜索、读文件、发邮件都写成这样的函数。
+</p>
+
+<p>
+  <strong>第 2 步：给 LLM 一份"说明书"。</strong>
+  LLM 不会自己去猜你有什么函数。你要用 JSON Schema 告诉它：有个工具叫 <code>get_weather</code>，它接受 <code>city</code> 参数。这份说明书叫 <strong>tool definition</strong>。LLM 看懂说明书后，才会在需要时「点名」要调它。
+</p>
+
+<p>
+  <strong>第 3 步：循环是 Agent 的心脏。</strong>
+  看那个 <code>while True</code>——这就是 Agent 区别于一次性 LLM 调用的本质：
+</p>
+
+<ol>
+  <li>把对话发给 LLM</li>
+  <li>看 LLM 是想<strong>直接回答</strong>（结束循环），还是想<strong>调工具</strong></li>
+  <li>如果调工具：执行函数，把结果作为新的消息塞回对话</li>
+  <li>回到第 1 步，LLM 现在有了工具结果，可以继续推理</li>
+</ol>
+
+<p>
+  在这个例子里，LLM 会自己决定：<em>「我需要先查北京，再查上海，然后比较两个温度。」</em> 这两次工具调用、最后那次比较——<strong>路径是 LLM 决定的，不是你写死的</strong>。这就是 Agent。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>为什么这是「Agent 2.0」而不是 AutoGPT 那种？</strong>
+    因为它用的是<strong>模型原生的工具调用能力</strong>（tool calling），而不是用 prompt 硬哄模型输出一段「Thought: ... Action: ...」文本再正则解析。原生 tool calling 是 2024 年后所有主流模型的标准能力，更稳定、更可控、更便宜。这是代际分水岭之一。
+  </p>
+</div>
+
+<h2>动手跑起来</h2>
+
+<ol>
+  <li>安装 SDK：<code>pip install openai</code></li>
+  <li>设置环境变量：<code>export OPENAI_API_KEY=sk-...</code></li>
+  <li>把上面的代码存为 <code>agent.py</code>，运行 <code>python agent.py</code></li>
+  <li>试着把问题改成「北京、上海、广州今天哪个最热？」，观察 LLM 会调几次工具。</li>
+</ol>
+
+<p>
+  如果你还没有 API Key，可以用 <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI 平台</a>申请一个，几块钱就够跑完这堂课。后面我们会换到 Anthropic 的 Claude，思路完全一样。
+</p>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">下面哪个程序最符合「Agent」的定义？</p>
+  <ul class="quiz-options">
+    <li>一个脚本：先调 LLM 翻译，再把结果存进数据库，路径写死在代码里</li>
+    <li>一个循环：每次问 LLM 下一步调哪个工具，执行后把结果喂回，直到 LLM 说完成</li>
+    <li>一个函数：输入城市名，返回固定格式的天气字符串</li>
+    <li>一个 Prompt：让 LLM 一次性写完一篇关于 Agent 的文章</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">用户问「帮我看看我邮箱里最近的发票并算出总额」。这个任务为什么必须用 Agent，而不是一次性 LLM 调用？</p>
+  <ul class="quiz-options">
+    <li>因为 LLM 不会算加法，必须用循环多算几次</li>
+    <li>因为一次性调用太慢，循环能加速</li>
+    <li>因为需要先读邮箱（工具1），可能要翻页（工具2），再识别发票（工具3），再求和（工具4）——步骤数和顺序取决于邮件内容，无法预先写死</li>
+    <li>因为 Agent 比 LLM 更便宜，省钱</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  这堂课的核心观点来自 Anthropic 的工程实践指南。强烈建议你花 15 分钟读一遍原文，它会给你一张「什么时候该用 Agent、什么时候别用」的决策图，这是后面所有课的地基：
+</p>
+
+<p>
+  <strong>👉 <a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank">Building Effective Agents — Anthropic</a></strong>
+</p>
+
+<p>
+  如果想看更系统的「Agent 三大组件」定义（规划 / 记忆 / 工具），可以读 Lilian Weng 的经典文章：<a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank">LLM Powered Autonomous Agents</a>。本课只讲了「工具 + 循环」，她的文章会补全「规划」和「记忆」这两块——这两块会在后面几课展开。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>下一课我们会给这个最小 Agent 加上<strong>第二个工具</strong>（比如「读文件」），让你第一次体会「Agent 自己选择工具」的瞬间。在那之前，请先把上面的代码跑通。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>我是你的老师。任何不清楚的地方——代码报错、概念疑惑、想换个例子——直接在对话里问就行，不用客气。</p>
+  </section>
+  <section>
+    <h4>术语</h4>
+    <p>本课用到的术语都已收录在 <a href="../GLOSSARY.md">Glossary</a> 里，以后所有课程都遵循这套用词。</p>
+  </section>
+</footer>
+
+<script>
+  // 极简测验交互：点击选项即反馈
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。Agent 的本质是「LLM 在循环中自主选择工具并执行」，路径由模型决定。A 是 Workflow（路径写死），C 是普通函数，D 是一次性调用。',
+      'c': '正确。真实任务里，步骤数和顺序<strong>取决于运行时看到的内容</strong>——有多少封邮件、是不是发票、要不要翻页，这些只有读了才知道。这正是 Agent 比 Workflow 强的地方：路径不写死。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i); // a, b, c, d
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

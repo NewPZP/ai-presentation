@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 14 课 · 项目实战</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 14 课 · AI Agent 2.0 实战 · 毕业设计</p>
+  <h1 class="lesson-title">项目实战</h1>
+  <p class="lesson-meta">从 0 到 1 做一个你的 Agent 产品 · 约 25 分钟</p>
+</header>
+
+<main>
+
+<h2>这是毕业课</h2>
+
+<p>
+  前 13 课你学了所有零件：工具、循环、记忆、流式、评测、生产化、多 SDK、RAG、多 Agent、架构选择。这一课把这些零件<strong>组装成一个真正的产品</strong>。
+</p>
+
+<p>
+  和前 13 课不同，这一课没有标准答案--因为产品要围绕<strong>你的</strong>创业方向。我会给一个完整的方法论和参考案例，但具体做什么由你定。
+</p>
+
+<blockquote>
+  <p>
+    读完这一课后，你应该能独立完成：需求分析 → 架构选择 → 实现核心 → 评测 → 部署 → 迭代。这是从「会写 Agent 代码」到「能做 Agent 产品」的跨越。
+  </p>
+</blockquote>
+
+<h2>第一步：选对问题</h2>
+
+<p>
+  Agent 产品的成败 80% 取决于「选没选对问题」。再好的技术也救不了一个没人需要的产品。选问题的三条原则：
+</p>
+
+<h3>原则 1：问题里要有「路径不固定」</h3>
+
+<p>
+  回顾第 13 课：路径能写死就用 Workflow，不需要 Agent。所以你的产品问题里必须有「路径需要 LLM 灵活决定」的部分，Agent 才有价值。
+</p>
+
+<table>
+  <thead>
+    <tr><th>适合 Agent 的问题</th><th>不适合的问题</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>「帮我看这个代码为啥不跑」--要看代码、跑测试、看报错、改</td>
+      <td>「每天汇总销售发飞书」--路径固定，Workflow 够</td>
+    </tr>
+    <tr>
+      <td>「研究下这家公司值不值得投资」--要查财报、算指标、对比、写报告</td>
+      <td>「翻译这段话」--一次 LLM 调用</td>
+    </tr>
+    <tr>
+      <td>「规划下周东京旅行」--要查航班、酒店、景点、排日程、权衡预算</td>
+      <td>「把 PDF 转 Word」--纯工具任务</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>原则 2：容错率要够高</h3>
+
+<p>
+  Agent 会出错（选错工具、编造内容、跑偏）。如果你的场景容错率为零（如医疗诊断、金融交易），别用 Agent。好的 Agent 产品场景：
+</p>
+
+<ul>
+  <li><strong>有用户兜底</strong>：产出由人审核后再用（如代码生成、文案起草）</li>
+  <li><strong>可迭代</strong>：错了用户反馈，系统能改进</li>
+  <li><strong>试错成本低</strong>：错了重试就行，不造成不可逆损失</li>
+</ul>
+
+<h3>原则 3：价值要够大</h3>
+
+<p>
+  Agent 比 Workflow 贵、慢。如果它省下的时间/创造的价值不超过成本，就没商业意义。问自己：<strong>用户愿意为这个功能付多少钱？Agent 的调用成本是多少？</strong>
+</p>
+
+<p>好场景：一个 Agent 调用花 0.5 元，但帮用户省了 1 小时（值 100 元）。坏场景：花 0.5 元，只省了 10 秒。</p>
+
+<h2>第二步：架构选择</h2>
+
+<p>选好问题后，用第 13 课的决策框架定架构。常见产品的典型架构：</p>
+
+<table>
+  <thead>
+    <tr><th>产品类型</th><th>推荐架构</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>智能客服</td>
+      <td>Routing（分类）+ 内层按需：FAQ 用 Workflow+RAG，复杂咨询用 Agent</td>
+    </tr>
+    <tr>
+      <td>编程助手</td>
+      <td>纯 Agent（多工具：读文件、改代码、跑测试、看报错）</td>
+    </tr>
+    <tr>
+      <td>数据分析助手</td>
+      <td>Agent + 代码解释器（工具：执行 SQL、画图、统计）</td>
+    </tr>
+    <tr>
+      <td>研究助手</td>
+      <td>Agent + RAG + 搜索工具（查资料、汇总、写报告）</td>
+    </tr>
+    <tr>
+      <td>写作助手</td>
+      <td>Workflow（Prompt Chaining：大纲 → 初稿 → 校对 → 润色）</td>
+    </tr>
+    <tr>
+      <td>旅行规划</td>
+      <td>多 Agent（主 Agent + 航班专家 + 酒店专家 + 行程专家）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p><strong>新手常犯的错</strong>：一上来就上最复杂的架构（多 Agent + RAG + 流式）。正确做法：<strong>从最小可用架构开始，评测驱动地加复杂度</strong>。</p>
+
+<h2>第三步：参考案例--「智询研究」</h2>
+
+<p>
+  下面是一个完整的产品案例，展示从 0 到 1 的全过程。假设你做一个「公司研究助手」--用户输入一家公司名，Agent 自动查财报、算指标、对比同行、写研究报告。
+</p>
+
+<h3>3.1 需求拆解</h3>
+
+<pre><code>用户：帮我研究下比亚迪值不值得投资
+
+Agent 应该：
+1. 查比亚迪近 3 年财报（工具：search_financial_data）
+2. 算关键指标：营收增长、毛利率、PE（工具：calculate）
+3. 查行业对比数据（工具：search_industry_data）
+4. 综合分析，写一份报告（LLM 生成）
+
+产出：结构化研究报告，含数据、图表、结论</code></pre>
+
+<h3>3.2 架构决策</h3>
+
+<p>用决策框架走一遍：</p>
+
+<ul>
+  <li>路径能写死吗？<strong>不能</strong>--不同公司能查到的数据不同，用户关注的指标不同，需要 LLM 灵活决定查什么、算什么</li>
+  <li>要调几个工具？<strong>3-5 个</strong>--search_financial_data, calculate, search_industry_data, generate_chart</li>
+  <li>能容忍不可预测性？<strong>能</strong>--研究报告由人审阅后再决策，不是直接交易</li>
+  <li>延迟可接受？<strong>能</strong>--研究报告本就需要几分钟，用户有预期</li>
+</ul>
+
+<p>结论：<strong>用 Agent</strong>，不需要多 Agent（工具不多、领域单一）。</p>
+
+<h3>3.3 最小实现</h3>
+
+<pre><code><span class="c"># research_agent.py</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()
+
+SYSTEM_PROMPT = <span class="s">"""你是公司研究助手。
+流程：
+1. 用 search_financial_data 查公司近 3 年财报
+2. 用 calculate 算关键指标（营收增长率、毛利率、PE）
+3. 用 search_industry_data 查行业对比
+4. 如有数值数据，用 generate_chart 生成图表
+5. 综合分析，写结构化报告
+
+报告格式：
+## 公司概况
+## 财务表现（含数据）
+## 行业对比
+## 投资建议（含风险提示）
+"""</span>
+
+<span class="c"># ===== 工具 =====</span>
+<span class="k">def</span> search_financial_data(company: str, years: int = 3) -> str:
+    <span class="s">"""查公司财报（示例用模拟数据）"""</span>
+    <span class="c"># 真实场景：调Wind/同花顺/雅虎财经 API</span>
+    data = {
+        <span class="s">"比亚迪"</span>: <span class="s">"2023: 营收 4220亿 增长 42%, 毛利率 20%, 净利 300亿; 2022: 营收 2970亿, 毛利率 17%; 2021: 营收 2160亿, 毛利率 13%"</span>,
+        <span class="s">"茅台"</span>: <span class="s">"2023: 营收 1500亿 增长 18%, 毛利率 91%, 净利 750亿"</span>,
+    }
+    <span class="k">return</span> data.get(company, <span class="s">f"未找到 {company} 的财报数据"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression): <span class="k">raise</span> ValueError(<span class="s">"非法字符"</span>)
+    <span class="k">return</span> str(eval(expression))
+
+<span class="k">def</span> search_industry_data(industry: str) -> str:
+    data = {
+        <span class="s">"汽车"</span>: <span class="s">"行业平均毛利率 15%, 营收增长 10%。新能源细分赛道增长 35%"</span>,
+        <span class="s">"白酒"</span>: <span class="s">"行业平均毛利率 65%, 营收增长 12%"</span>,
+    }
+    <span class="k">return</span> data.get(industry, <span class="s">f"未找到 {industry} 行业数据"</span>)
+
+<span class="k">def</span> generate_chart(data: str, chart_type: str = <span class="s">"bar"</span>) -> str:
+    <span class="c"># 真实场景：用 matplotlib/plotly 生成图片，返回 URL</span>
+    <span class="k">return</span> <span class="s">f"已生成 {chart_type} 图表：{data[:50]}..."</span>
+
+<span class="c"># ===== 工具定义 =====</span>
+tools = [
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"search_financial_data"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询上市公司财报数据（营收、利润、毛利率等）"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {
+            <span class="s">"company"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"description"</span>: <span class="s">"公司名"</span>},
+            <span class="s">"years"</span>: {<span class="s">"type"</span>: <span class="s">"integer"</span>, <span class="s">"description"</span>: <span class="s">"查几年，默认3"</span>}
+        }, <span class="s">"required"</span>: [<span class="s">"company"</span>]}
+    }},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+        <span class="s">"description"</span>: <span class="s">"计算数学表达式，如 '(4220-2970)/2970*100' 算增长率"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {
+            <span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}
+        }, <span class="s">"required"</span>: [<span class="s">"expression"</span>]}
+    }},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"search_industry_data"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询某行业的平均指标，用于对比"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {
+            <span class="s">"industry"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"description"</span>: <span class="s">"行业名，如 '汽车'、'白酒'"</span>}
+        }, <span class="s">"required"</span>: [<span class="s">"industry"</span>]}
+    }},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"generate_chart"</span>,
+        <span class="s">"description"</span>: <span class="s">"生成图表（柱状图、折线图等）"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {
+            <span class="s">"data"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"description"</span>: <span class="s">"数据描述"</span>},
+            <span class="s">"chart_type"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>, <span class="s">"enum"</span>: [<span class="s">"bar"</span>, <span class="s">"line"</span>, <span class="s">"pie"</span>]}
+        }, <span class="s">"required"</span>: [<span class="s">"data"</span>]}
+    }},
+]
+
+tool_map = {
+    <span class="s">"search_financial_data"</span>: search_financial_data,
+    <span class="s">"calculate"</span>: calculate,
+    <span class="s">"search_industry_data"</span>: search_industry_data,
+    <span class="s">"generate_chart"</span>: generate_chart,
+}
+
+<span class="c"># ===== Agent 循环（和第 5 课的结构一致）=====</span>
+<span class="k">def</span> research(query: str) -> str:
+    messages = [
+        {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: SYSTEM_PROMPT},
+        {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: query}
+    ]
+    <span class="k">for</span> _ <span class="k">in</span> range(15):  <span class="c"># 研究任务可能步骤多，给 15 轮</span>
+        resp = client.chat.completions.create(
+            model=<span class="s">"gpt-4o"</span>,  <span class="c"># 研究任务用强模型</span>
+            messages=messages,
+            tools=tools,
+        )
+        msg = resp.choices[0].message
+        messages.append(msg)
+        <span class="k">if not</span> msg.tool_calls:
+            <span class="k">return</span> msg.content
+        <span class="k">for</span> tc <span class="k">in</span> msg.tool_calls:
+            print(<span class="s">f"-> {tc.function.name}({tc.function.arguments})"</span>)
+            args = json.loads(tc.function.arguments)
+            <span class="k">try</span>:
+                result = tool_map[tc.function.name](**args)
+            <span class="k">except</span> Exception <span class="k">as</span> e:
+                result = <span class="s">f"工具失败：{e}"</span>
+            print(<span class="s">f"   {str(result)[:80]}"</span>)
+            messages.append({<span class="s">"role"</span>: <span class="s">"tool"</span>, <span class="s">"tool_call_id"</span>: tc.id, <span class="s">"content"</span>: str(result)})
+    <span class="k">return</span> <span class="s">"研究超时，步骤太多"</span>
+
+<span class="c"># 测试</span>
+print(research(<span class="s">"研究下比亚迪值不值得投资"</span>))</code></pre>
+
+<p>输出（简化）：</p>
+
+<pre><code>-> search_financial_data({"company": "比亚迪", "years": 3})
+   2023: 营收 4220亿 增长 42%...
+-> calculate({"expression": "(4220-2970)/2970*100"})
+   42.0875...
+-> calculate({"expression": "(20-17)/17*100"})
+   17.647...
+-> search_industry_data({"industry": "汽车"})
+   行业平均毛利率 15%...
+-> generate_chart({"data": "比亚迪营收 2021-2023: 2160, 2970, 4220", "chart_type": "bar"})
+   已生成 bar 图表...
+
+## 比亚迪投资研究报告
+
+### 公司概况
+比亚迪是中国新能源汽车龙头...
+
+### 财务表现
+- 营收：2021 年 2160 亿 → 2023 年 4220 亿，3 年增长 95%
+- 毛利率：从 13% 提升到 20%，盈利能力持续改善
+- [图表：营收增长趋势]
+
+### 行业对比
+- 公司营收增速 42%，远超行业平均 10%
+- 毛利率 20%，高于行业平均 15%
+
+### 投资建议
+基本面强劲...（风险提示：行业竞争加剧、补贴退坡）</code></pre>
+
+<h3>3.4 评测</h3>
+
+<p>用第 7 课的框架设计评测：</p>
+
+<pre><code>TEST_CASES = [
+    {
+        <span class="s">"query"</span>: <span class="s">"研究比亚迪"</span>,
+        <span class="s">"expected_tools"</span>: [<span class="s">"search_financial_data"</span>, <span class="s">"calculate"</span>, <span class="s">"search_industry_data"</span>],
+        <span class="s">"rubric"</span>: <span class="s">"报告是否包含：1.营收数据 2.增长率计算 3.行业对比 4.投资建议 5.风险提示"</span>
+    },
+    {
+        <span class="s">"query"</span>: <span class="s">"茅台和比亚迪哪个更值得投"</span>,
+        <span class="s">"expected_tools"</span>: [<span class="s">"search_financial_data"</span>, <span class="s">"search_industry_data"</span>],  <span class="c"># 要查两家</span>
+        <span class="s">"rubric"</span>: <span class="s">"是否对比了两家公司的关键指标，而非只分析一家"</span>
+    },
+    {
+        <span class="s">"query"</span>: <span class="s">"比亚迪的 PE 是多少"</span>,
+        <span class="s">"expected_tools"</span>: [<span class="s">"search_financial_data"</span>],  <span class="c"># 简单查询，不该过度调工具</span>
+        <span class="s">"rubric"</span>: <span class="s">"是否直接回答 PE，而非写长篇报告"</span>
+    },
+]
+
+<span class="c"># 跑评测，看工具选择准确率和回答质量分</span></code></pre>
+
+<p>评测会暴露问题：比如第 3 个用例，LLM 可能还是调了 calculate 和 generate_chart，属于过度调用。可以通过调 system prompt（「简单查询直接回答，不用写报告」）来修。</p>
+
+<h3>3.5 部署</h3>
+
+<p>用第 9 课的方案：FastAPI + Redis + Docker。核心代码就是把上面的 <code>research</code> 函数包成 API 端点：</p>
+
+<pre><code><span class="c"># server.py</span>
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI, Depends
+<span class="k">from</span> fastapi.responses <span class="k">import</span> StreamingResponse
+app = FastAPI()
+
+<span class="k">@app.post</span>(<span class="s">"/research"</span>)
+<span class="k">async def</span> do_research(req: ResearchRequest, api_key: str = Depends(verify_api_key)):
+    report = research(req.query)  <span class="c"># 同步调用（生产环境建议改异步+流式）</span>
+    <span class="k">return</span> {<span class="s">"report"</span>: report}
+
+<span class="c"># 加上第 8 课的流式、第 9 课的认证/限流/Redis</span></code></pre>
+
+<h3>3.6 迭代</h3>
+
+<p>上线后的迭代节奏：</p>
+
+<ol>
+  <li><strong>第 1 周</strong>：收集真实用户问题，看 Agent 在哪些 case 上挂了</li>
+  <li><strong>第 2 周</strong>：把挂掉的 case 补进评测集，调 prompt 或加工具修复</li>
+  <li><strong>第 3 周</strong>：对比不同模型（gpt-4o vs Claude）在评测集上的表现，选最优</li>
+  <li><strong>第 4 周</strong>：优化成本--简单 case 路由到小模型，复杂 case 才用大模型</li>
+  <li><strong>持续</strong>：每周跑评测，确保新改动没引入回归</li>
+</ol>
+
+<h2>第四步：你的产品该做什么</h2>
+
+<p>现在轮到你了。围绕你的创业方向，按这个流程走：</p>
+
+<ol>
+  <li>
+    <strong>写一句话需求</strong>：你的 Agent 帮谁解决什么问题？例：「帮二级市场投资者快速研究一家公司是否值得投资」
+  </li>
+  <li>
+    <strong>用决策框架判断架构</strong>：路径能写死吗？要几个工具？容错率够吗？
+  </li>
+  <li>
+    <strong>列工具清单</strong>：Agent 需要哪些工具？每个工具的 name / description / parameters 写清楚
+  </li>
+  <li>
+    <strong>写 system prompt</strong>：身份 / 能力边界 / 行为规则 / 输出格式
+  </li>
+  <li>
+    <strong>实现最小版</strong>：用第 5 课的 Agent 类，跑通核心流程
+  </li>
+  <li>
+    <strong>设计 5-10 个评测用例</strong>：覆盖典型场景和边界 case
+  </li>
+  <li>
+    <strong>加上 Web 服务 + 流式</strong>：第 6-8 课的方案
+  </li>
+  <li>
+    <strong>生产化部署</strong>：第 9 课的方案
+  </li>
+  <li>
+    <strong>找 5 个真实用户试用</strong>：收集反馈，迭代
+  </li>
+</ol>
+
+<h2>常见陷阱清单</h2>
+
+<table>
+  <thead>
+    <tr><th>陷阱</th><th>症状</th><th>解法</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>过度工程化</td>
+      <td>第一版就上多 Agent + RAG + 向量库</td>
+      <td>从单 Agent 最小版开始，评测驱动地加复杂度</td>
+    </tr>
+    <tr>
+      <td>工具描述不清</td>
+      <td>LLM 经常选错工具或传错参数</td>
+      <td>description 写清楚「什么时候用」「不用来干什么」，第 2 课的原则</td>
+    </tr>
+    <tr>
+      <td>system prompt 太长</td>
+      <td>LLM 忘规则、遵循率下降</td>
+      <td>控制在 500 字内，只写必要规则，用示例代替规则</td>
+    </tr>
+    <tr>
+      <td>不评测就上线</td>
+      <td>用户反馈差但不知道哪里有问题</td>
+      <td>上线前至少跑 10 个评测用例，工具准确率 80%+</td>
+    </tr>
+    <tr>
+      <td>忽略成本</td>
+      <td>单个调用成本超用户付费</td>
+      <td>监控每次调用的 token 数，简单 case 路由到小模型</td>
+    </tr>
+    <tr>
+      <td>没有兜底</td>
+      <td>Agent 出错时用户无反馈</td>
+      <td>工具失败要回传错误，Agent 卡住要超时退出，加「转人工」选项</td>
+    </tr>
+    <tr>
+      <td>过早优化</td>
+      <td>还没用户就纠结选哪个向量库</td>
+      <td>先用 Chroma 本地跑，有规模压力再换 Qdrant/Pinecone</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>下一步学习方向</h2>
+
+<p>这个课程到这里结束，但你的学习才刚开始。推荐方向：</p>
+
+<ul>
+  <li>
+    <strong>读源码</strong>：看 <a href="https://github.com/openai/openai-agents-python" target="_blank">OpenAI Agents SDK</a> 和 <a href="https://github.com/langchain-ai/langgraph" target="_blank">LangGraph</a> 的源码，理解工业级 Agent 框架的设计
+  </li>
+  <li>
+    <strong>跟前沿</strong>：关注 Anthropic、OpenAI 的博客，新模型发布时看它们的 agent 评测
+  </li>
+  <li>
+    <strong>做项目</strong>：最好的学习是做一个真给真人用的产品。哪怕是 10 个用户的小工具，也比 100 个 demo 强
+  </li>
+  <li>
+    <strong>找社区</strong>：加入 Agent 开发者社区（如 <a href="https://discord.gg/openai" target="_blank">OpenAI Discord</a>、Anthropic 社区），和同行交流真实场景的坑
+  </li>
+  <li>
+    <strong>深入垂直领域</strong>：如果你做金融 Agent，深入学金融知识；做医疗 Agent，学医疗合规。Agent 工程的壁垒最终是领域知识
+  </li>
+</ul>
+
+<h2>毕业检查清单</h2>
+
+<p>对照下表，确认你掌握了核心能力：</p>
+
+<table>
+  <thead>
+    <tr><th>能力</th><th>课程</th><th>自查</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>能讲清 Agent = LLM + 工具 + 循环</td><td>1</td><td>□</td></tr>
+    <tr><td>能写多工具 Agent 并设计工具描述</td><td>2</td><td>□</td></tr>
+    <tr><td>能写 system prompt 并实现对话循环</td><td>3</td><td>□</td></tr>
+    <tr><td>能实现长期记忆并处理膨胀</td><td>4</td><td>□</td></tr>
+    <tr><td>能封装 Agent 类并加错误处理</td><td>5</td><td>□</td></tr>
+    <tr><td>能用 FastAPI 暴露 Agent 服务</td><td>6</td><td>□</td></tr>
+    <tr><td>能设计评测用例并量化 Agent 质量</td><td>7</td><td>□</td></tr>
+    <tr><td>能实现流式输出</td><td>8</td><td>□</td></tr>
+    <tr><td>能用 Redis + Docker 生产化部署</td><td>9</td><td>□</td></tr>
+    <tr><td>能在 OpenAI 和 Claude 间切换</td><td>10</td><td>□</td></tr>
+    <tr><td>能实现 RAG 检索外部知识</td><td>11</td><td>□</td></tr>
+    <tr><td>能设计多 Agent 委托系统</td><td>12</td><td>□</td></tr>
+    <tr><td>能判断何时用 Agent / 何时用 Workflow</td><td>13</td><td>□</td></tr>
+    <tr><td>能独立从 0 到 1 做一个 Agent 产品</td><td>14</td><td>□</td></tr>
+  </tbody>
+</table>
+
+<h2>主源推荐</h2>
+
+<p>
+  这一课没有单一主源，因为实战需要综合所有资源。但如果你想看一个完整的真实 Agent 产品长什么样，推荐看：
+</p>
+
+<p>
+  <strong>👉 <a href="https://github.com/anthropics/anthropic-quickstarts" target="_blank">Anthropic Quickstarts - GitHub</a></strong> -- 多个完整可跑的 Agent 应用示例
+</p>
+
+<p>
+  <a href="https://github.com/openai/openai-agents-python/tree/main/examples" target="_blank">OpenAI Agents SDK 示例</a> -- 官方完整示例，覆盖各种场景
+</p>
+
+<p>
+  <a href="https://www.anthropic.com/research/building-effective-agents" target="_blank">Building effective agents - Anthropic</a> -- 架构决策的权威参考
+</p>
+
+<p>
+  <a href="https://platform.openai.com/docs/guides" target="_blank">OpenAI 官方指南</a> -- 持续更新，是跟进新能力的最佳渠道
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>恭喜毕业</h4>
+    <p>
+      14 课走完，你已经从一个「听过 AI Agent」的新手，变成一个能独立设计、实现、部署、评测 Agent 产品的工程师。这是 2026 年最稀缺的能力之一。
+    </p>
+    <p>
+      但课程结束不是学习结束--最好的学习是做一个真给真人用的产品。哪怕只有 10 个用户，你也会遇到课程没讲的真实问题，而解决这些问题的过程才是真正的成长。
+    </p>
+    <p>
+      去做吧。遇到问题随时回来问我。
+    </p>
+  </section>
+  <section>
+    <h4>想继续深入？</h4>
+    <p>
+      如果你想在某个方向深入（如多 Agent 编排、RAG 优化、特定领域的 Agent、Agent 安全），告诉我你的兴趣，我可以设计进阶课程或针对性项目。
+    </p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0013-when-to-use-agent-vs-workflow.html">第 13 课：何时用 Agent / 何时用 Workflow</a></p>
+    <p>← <a href="./0001-what-is-an-ai-agent.html">回到第 1 课</a></p>
+  </section>
+</footer>
+
+</body>
+</html>

@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 6 课 · 把 Agent 变成 Web 服务</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 6 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">把 Agent 变成 Web 服务</h1>
+  <p class="lesson-meta">用 FastAPI 给 Agent 包一层 HTTP · 约 15 分钟</p>
+</header>
+
+<main>
+
+<h2>为什么要做这一步？</h2>
+
+<p>
+  到目前为止，你的 Agent 只能通过命令行 <code>input()</code> 用——你自己跑可以，但<strong>别人没法用</strong>。创业产品、Side Project、给同事试用，都得让别人能通过网络调用你的 Agent。
+</p>
+
+<p>
+  这一课用 <strong>FastAPI</strong> 给上一课的 <code>WeatherAgent</code> 类包一层 HTTP 接口，让它变成一个别人能 <code>curl</code> 或者写前端调用的 Web 服务。这是从「我自己能跑」到「能给别人用」的最小一步，也是任何 Agent 产品的交付形态。
+</p>
+
+<blockquote>
+  <p>
+    选 FastAPI 不选 Flask/Django 的理由：异步原生（LLM 调用是 I/O 密集型，异步能并发处理多用户）、类型提示自动生成文档（<code>/docs</code> 页面开箱即用）、对单文件服务足够轻量。LangChain 这类重型框架的"Agent as a Service"底层也是这么包的，没什么神秘。
+  </p>
+</blockquote>
+
+<h2>核心设计问题：HTTP 是无状态的，Agent 是有状态的</h2>
+
+<p>
+  这是这堂课最关键的设计点，先想清楚再写代码。
+</p>
+
+<p>
+  HTTP 协议本身<strong>无状态</strong>——每个请求都是独立的，服务器不记得上次谁问过什么。但你的 Agent <strong>有状态</strong>——它需要 messages 历史才能"记住"对话。
+</p>
+
+<p>这意味着你必须在两者之间架一座桥。主流方案有三种：</p>
+
+<table>
+  <thead>
+    <tr><th>方案</th><th>怎么做</th><th>适用场景</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>A. 每次请求带完整历史</strong></td>
+      <td>客户端把整段 messages 作为请求体发过来，服务器无状态地处理一轮</td>
+      <td>最简单，但客户端负担重、请求体大</td>
+    </tr>
+    <tr>
+      <td><strong>B. 会话 ID + 服务端存储</strong></td>
+      <td>客户端只发 user_id 和消息，服务端按 user_id 存取 messages</td>
+      <td>本课采用。生产级主流方案</td>
+    </tr>
+    <tr>
+      <td><strong>C. 完全无状态 + 客户端管理</strong></td>
+      <td>服务器不存任何东西，每次请求都从客户端拿完整上下文</td>
+      <td>无状态服务，但客户端复杂、隐私风险</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  本课用方案 B——它和上一课的 <code>memory.json</code> 思路一致，只是从「单文件单用户」升级到「按 user_id 多文件」。
+</p>
+
+<h2>最小可用版本</h2>
+
+<p>假设上一课的 <code>WeatherAgent</code> 类已经写好（在 <code>agent.py</code> 里）。我们新建一个 <code>server.py</code>：</p>
+
+<pre><code><span class="c"># server.py</span>
+<span class="k">from</span> fastapi <span class="k">import</span> FastAPI
+<span class="k">from</span> pydantic <span class="k">import</span> BaseModel
+<span class="k">from</span> agent <span class="k">import</span> WeatherAgent, SYSTEM_PROMPT, get_weather, calculate
+
+app = FastAPI(title=<span class="s">"天气助手 API"</span>)
+
+<span class="c"># --- 请求 / 响应模型（Pydantic 自动校验） ---</span>
+<span class="k">class</span> ChatRequest(BaseModel):
+    user_id: str
+    message: str
+
+<span class="k">class</span> ChatResponse(BaseModel):
+    reply: str
+    trace: list[dict]  <span class="c"># 调度轨迹，方便调试</span>
+
+<span class="c"># --- Agent 工厂：按 user_id 创建或复用 Agent ---</span>
+agents: dict[str, WeatherAgent] = {}  <span class="c"># 简化：内存里缓存。生产环境用 Redis 或 DB</span>
+
+<span class="k">def</span> get_or_create_agent(user_id: str) -> WeatherAgent:
+    <span class="k">if</span> user_id <span class="k">not in</span> agents:
+        agent = WeatherAgent(
+            system_prompt=SYSTEM_PROMPT,
+            memory_file=<span class="s">f"memory_{user_id}.json"</span>,  <span class="c"># 每用户一个文件</span>
+            max_turns=20,
+        )
+        <span class="c"># 注册工具</span>
+        agent.register_tool(
+            name=<span class="s">"get_weather"</span>,
+            description=<span class="s">"查询某个城市的实时天气"</span>,
+            params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]},
+            fn=get_weather,
+        )
+        agent.register_tool(
+            name=<span class="s">"calculate"</span>,
+            description=<span class="s">"计算数学表达式，如 '28 - 25'"</span>,
+            params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expression"</span>]},
+            fn=calculate,
+        )
+        agents[user_id] = agent
+    <span class="k">return</span> agents[user_id]
+
+<span class="c"># --- 主接口：POST /chat ---</span>
+<span class="k">@app.post</span>(<span class="s">"/chat"</span>, response_model=ChatResponse)
+<span class="k">async def</span> chat(req: ChatRequest):
+    agent = get_or_create_agent(req.user_id)
+    <span class="c"># 记录调用前的 messages 长度，算出这一轮新增的轨迹</span>
+    before = len(agent.messages)
+    reply = agent.chat(req.message)
+    new_msgs = agent.messages[before:]
+    <span class="c"># 简化轨迹：只保留工具调用</span>
+    trace = [
+        {<span class="s">"tool"</span>: m.get(<span class="s">"function"</span>, {}).get(<span class="s">"name"</span>), <span class="s">"args"</span>: m.get(<span class="s">"function"</span>, {}).get(<span class="s">"arguments"</span>)}
+        <span class="k">for</span> m <span class="k">in</span> new_msgs
+        <span class="k">if</span> m.get(<span class="s">"role"</span>) == <span class="s">"assistant"</span> <span class="k">and</span> m.get(<span class="s">"tool_calls"</span>)
+    ]
+    <span class="k">return</span> ChatResponse(reply=reply, trace=trace)
+
+<span class="c"># --- 健康检查 ---</span>
+<span class="k">@app.get</span>(<span class="s">"/health"</span>)
+<span class="k">async def</span> health():
+    <span class="k">return</span> {<span class="s">"status"</span>: <span class="s">"ok"</span>}</code></pre>
+
+<p>装依赖、跑起来：</p>
+
+<pre><code>pip install fastapi uvicorn
+uvicorn server:app --reload --port 8000</code></pre>
+
+<p>看到 <code>Uvicorn running on http://127.0.0.1:8000</code> 就成了。打开 <a href="http://localhost:8000/docs" target="_blank">http://localhost:8000/docs</a>，FastAPI 已经自动生成了一个交互式文档页——你可以直接在浏览器里点 "Try it out" 测试接口。</p>
+
+<h2>试一下</h2>
+
+<p>用 <code>curl</code> 或在 docs 页面里发请求：</p>
+
+<pre><code><span class="c"># 第一轮对话</span>
+curl -X POST http://localhost:8000/chat \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{<span class="s">"user_id"</span>: <span class="s">"alice"</span>, <span class="s">"message"</span>: <span class="s">"我在北京"</span>}'
+
+<span class="c"># 返回</span>
+{
+  <span class="s">"reply"</span>: <span class="s">"好的，已记下你在北京。"</span>,
+  <span class="s">"trace"</span>: []
+}
+
+<span class="c"># 第二轮（同一个 user_id）</span>
+curl -X POST http://localhost:8000/chat \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{<span class="s">"user_id"</span>: <span class="s">"alice"</span>, <span class="s">"message"</span>: <span class="s">"我这儿天气怎么样？"</span>}'
+
+<span class="c"># 返回——注意 trace 里能看到工具调用</span>
+{
+  <span class="s">"reply"</span>: <span class="s">"北京今天晴，气温 25°C。"</span>,
+  <span class="s">"trace"</span>: [{<span class="s">"tool"</span>: <span class="s">"get_weather"</span>, <span class="s">"args"</span>: <span class="s">"{\"city\": \"北京\"}"</span>}]
+}
+
+<span class="c"># 换个用户</span>
+curl -X POST http://localhost:8000/chat \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{<span class="s">"user_id"</span>: <span class="s">"bob"</span>, <span class="s">"message"</span>: <span class="s">"我在哪？"</span>}'
+
+<span class="c"># Bob 是新用户，什么都不知道</span>
+{
+  <span class="s">"reply"</span>: <span class="s">"我还不了解你的位置，请告诉我你在哪个城市。"</span>,
+  <span class="s">"trace"</span>: []
+}</code></pre>
+
+<p>
+  注意第三个请求——<code>bob</code> 是新用户，<code>get_or_create_agent</code> 给他新建了一个 Agent 实例和独立的 <code>memory_bob.json</code>。这就是多用户隔离的最小实现。
+</p>
+
+<h2>关键设计点拆解</h2>
+
+<h3>1. 为什么用 <code>agents: dict</code> 缓存 Agent 实例？</h3>
+
+<p>
+  如果每个请求都 <code>new WeatherAgent()</code>，会反复读 <code>memory_*.json</code> 文件——慢，且浪费内存。用字典缓存后，第一次访问某 user_id 时加载，后续直接复用。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>但这只是教学简化版</strong>。生产环境有两个问题：① 多进程/多机器部署时，<code>dict</code> 不共享；② 内存无限增长，活跃用户多了会 OOM。生产方案是<strong>把 messages 存到 Redis/PostgreSQL</strong>，Agent 实例按需创建用完丢弃。本课先享受「能用」，第 8 课左右再讲生产化。
+  </p>
+</div>
+
+<h3>2. <code>async def</code> 但 Agent 内部是同步的——矛盾吗？</h3>
+
+<p>
+  FastAPI 的 <code>async def</code> 让这个端点能被并发调用，但 <code>agent.chat()</code> 内部调 OpenAI 是同步阻塞的。这意味着：如果一个请求正在等 LLM 响应，<strong>其他请求会被卡住</strong>。
+</p>
+
+<p>两种解法：</p>
+
+<ul>
+  <li>
+    <strong>简单版</strong>（本课采用）：直接同步调用。单机并发量不大（10-50 并发）时够用。FastAPI 会把 <code>async def</code> 里同步阻塞的部分放到线程池，不会完全卡死。
+  </li>
+  <li>
+    <strong>进阶版</strong>：用 <code>httpx.AsyncOpenAI</code> 替代 <code>OpenAI</code>，把 <code>_call_llm_with_retry</code> 改成 <code>async def</code>，整个链路都异步。能撑更高并发，但代码复杂度上升。等你的服务真扛不住时再换。
+  </li>
+</ul>
+
+<h3>3. Pydantic 模型自动校验请求</h3>
+
+<p>
+  <code>class ChatRequest(BaseModel)</code> 不是装饰——FastAPI 会自动校验请求体：少字段、类型错、JSON 不合法，都会返回清晰的 422 错误，<strong>不需要你写任何 if 校验</strong>。比如：
+</p>
+
+<pre><code><span class="c"># 少发 message 字段</span>
+curl -X POST http://localhost:8000/chat \
+  -H <span class="s">"Content-Type: application/json"</span> \
+  -d '{<span class="s">"user_id"</span>: <span class="s">"alice"</span>}'
+
+<span class="c"># 返回</span>
+{
+  <span class="s">"detail"</span>: [{
+    <span class="s">"type"</span>: <span class="s">"missing"</span>,
+    <span class="s">"loc"</span>: [<span class="s">"body"</span>, <span class="s">"message"</span>],
+    <span class="s">"msg"</span>: <span class="s">"Field required"</span>
+  }]
+}</code></pre>
+
+<p>这是 FastAPI 相比 Flask 的核心优势之一——类型提示驱动校验和文档，省掉大量样板代码。</p>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    跑通服务，在 <code>/docs</code> 页面里交互测试，确认能正常对话。
+  </li>
+  <li>
+    用两个不同的 <code>user_id</code>（如 alice / bob）分别聊几轮，确认各自记忆隔离。退出服务重启，再发请求，确认历史还在（从 <code>memory_*.json</code> 加载回来了）。
+  </li>
+  <li>
+    <strong>写个最小前端</strong>：新建 <code>index.html</code>，用 <code>fetch</code> 调用 <code>/chat</code>，把回复显示在页面上。这一步让你第一次体会「我的 Agent 有了界面」。代码框架：
+    <pre><code><span class="c">&lt;!-- index.html，放在项目根目录 --&gt;</span>
+&lt;input id=<span class="s">"msg"</span> placeholder=<span class="s">"说点什么..."</span>&gt;
+&lt;button onclick=<span class="s">"send()"</span>&gt;发送&lt;/button&gt;
+&lt;div id=<span class="s">"log"</span>&gt;&lt;/div&gt;
+&lt;script&gt;
+<span class="k">async</span> <span class="k">function</span> send() {
+  <span class="k">const</span> msg = document.getElementById(<span class="s">'msg'</span>).value;
+  <span class="k">const</span> r = <span class="k">await</span> fetch(<span class="s">'/chat'</span>, {
+    method: <span class="s">'POST'</span>,
+    headers: {<span class="s">'Content-Type'</span>: <span class="s">'application/json'</span>},
+    body: JSON.stringify({user_id: <span class="s">'web'</span>, message: msg})
+  });
+  <span class="k">const</span> data = <span class="k">await</span> r.json();
+  document.getElementById(<span class="s">'log'</span>).innerHTML += <span class="s">`&lt;p&gt;你: ${msg}&lt;/p&gt;&lt;p&gt;助手: ${data.reply}&lt;/p&gt;`</span>;
+}
+&lt;/script&gt;</code></pre>
+    要让 FastAPI 能返回这个 HTML，在 <code>server.py</code> 加一句：
+    <pre><code><span class="k">from</span> fastapi.responses <span class="k">import</span> FileResponse
+<span class="k">@app.get</span>(<span class="s">"/"</span>)
+<span class="k">async def</span> index():
+    <span class="k">return</span> FileResponse(<span class="s">"index.html"</span>)</code></pre>
+    然后访问 <a href="http://localhost:8000/">http://localhost:8000/</a>，你就有了一个能聊天的网页。这是后面做产品的起点。
+  </li>
+  <li>
+    <strong>并发测试</strong>：开两个终端窗口，同时用 curl 发请求（一个 alice 一个 bob），观察会不会互相干扰。这是验证多用户隔离的最直接方式。
+  </li>
+</ol>
+
+<h2>生产环境还要做的事（先知道，不实现）</h2>
+
+<p>本课是「能跑」的版本，真要上线还差这些（后续课程会逐一讲）：</p>
+
+<table>
+  <thead>
+    <tr><th>问题</th><th>本课现状</th><th>生产方案</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Agent 实例存储</td>
+      <td>内存 dict</td>
+      <td>Redis 或数据库，按需加载</td>
+    </tr>
+    <tr>
+      <td>API Key 保护</td>
+      <td>谁都能调</td>
+      <td>加 API Key / JWT 认证中间件</td>
+    </tr>
+    <tr>
+      <td>并发瓶颈</td>
+      <td>同步阻塞 LLM 调用</td>
+      <td>换 <code>AsyncOpenAI</code>，或用消息队列（Celery/RQ）</td>
+    </tr>
+    <tr>
+      <td>限流</td>
+      <td>无</td>
+      <td>按 user_id 限速，防止滥用</td>
+    </tr>
+    <tr>
+      <td>日志与监控</td>
+      <td>print</td>
+      <td>结构化日志 + Sentry + 延迟/token 指标</td>
+    </tr>
+    <tr>
+      <td>部署</td>
+      <td>本地 uvicorn</td>
+      <td>Gunicorn + Uvicorn workers，或容器化上云</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  不要被这张表吓到——<strong>本课的代码已经是一个能用的 MVP</strong>。后续课程会按需补齐这些，不会一次堆给你。
+</p>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">HTTP 是无状态协议，但你的 Agent 需要记忆对话历史。本课采用的关键设计是？</p>
+  <ul class="quiz-options">
+    <li>让 LLM 自己记住历史，不靠服务器</li>
+    <li>用 user_id 作为 key，服务端按用户存取 messages，每个用户一个独立的 Agent 实例和记忆文件</li>
+    <li>每次请求都让客户端把完整历史发过来，服务端完全不存</li>
+    <li>把所有用户的历史混在一起存一个文件</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你的服务上线后，用户 A 抱怨「我和 Agent 说了我在北京，但下次它忘了」。最可能的原因是？</p>
+  <ul class="quiz-options">
+    <li>LLM 记忆能力太差</li>
+    <li>系统提示没写好</li>
+    <li>每次请求的 user_id 不一致（比如前端生成了随机 ID），导致服务端把 A 当成不同用户，每次都新建空 Agent</li>
+    <li>FastAPI 不支持持久化</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  FastAPI 官方教程是所有 Python Web 框架里写得最清晰的之一，强烈建议通读「First Steps」部分（15 分钟）：
+</p>
+
+<p>
+  <strong>👉 <a href="https://fastapi.tiangolo.com/zh/tutorial/" target="_blank">FastAPI 教程 — 官方中文版</a></strong>
+</p>
+
+<p>
+  关于 LLM 应用的工程化，Anthropic 的 cookbook 里有一个「<a href="https://github.com/anthropics/anthropic-cookbook" target="_blank">customer service agent</a>」示例，演示了从 Agent 类到 Web 服务的完整封装，可以对照本课看更成熟的写法。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>恭喜——到这里你的 Agent 已经是一个能被别人通过网络调用的服务了。下一课是个<strong>评测</strong>专题：怎么知道你的 Agent 到底好不好用？我们会设计一组测试用例，量化 Agent 的回答质量、工具选择准确率、成本。这是从「我觉得它能用」到「我有数据证明它好用」的关键一步，也是创业产品做迭代的基础。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>FastAPI 装不上？uvicorn 启动报错？前端 fetch 跨域问题？把错误贴给我。想加流式输出（SSE）让回复一字一字出现？这是个常见进阶需求，可以提前聊。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0005-agent-class-and-error-handling.html">第 5 课：封装 Agent 类与错误处理</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。这是 Web Agent 的标准设计：user_id 是状态隔离的边界，服务端按 user_id 维护各自的 messages 和 Agent 实例。方案 A（客户端带完整历史）请求体太大，方案 C 会让客户端复杂且无法做服务端优化，方案 D 会造成用户间串数据。',
+      'c': '正确。这是新手最常见的 bug——前端没用稳定的 user_id（比如用了随机 UUID 或没登录态），每次请求都当新用户，服务端每次都新建空 Agent。解决方式是让 user_id 来自登录态或稳定的本地存储。这和「LLM 忘了」无关，是工程问题。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

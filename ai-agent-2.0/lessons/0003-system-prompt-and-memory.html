@@ -1,0 +1,386 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 3 课 · 系统提示与最简记忆</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 3 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">系统提示与最简记忆</h1>
+  <p class="lesson-meta">让 Agent 有人格、能持续对话 · 约 12 分钟</p>
+</header>
+
+<main>
+
+<h2>这一课要解决两件事</h2>
+
+<p>
+  <a href="./0002-let-agent-choose-tools.html">第 2 课</a> 结尾留了个悬念：你问「今天该穿什么衣服？我在北京」，LLM 可能<strong>不调</strong> <code>get_weather</code> 直接凭印象答。这不算错，但不是你想要的——你希望它<strong>先查再答</strong>。
+</p>
+
+<p>
+  这堂课用两件事解决它，顺便把 Agent 从「跑一次就结束」升级成「能持续对话」：
+</p>
+
+<ol>
+  <li><strong>系统提示（System Prompt）</strong>：给 Agent 一份「行为守则」，告诉它你是谁、该怎么做事、什么必须做、什么别做。</li>
+  <li><strong>对话循环</strong>：把 messages 列表保留下来，循环接收用户输入。这就是 Agent 的「短期记忆」。</li>
+</ol>
+
+<h2>第一件事：系统提示</h2>
+
+<p>
+  到目前为止，我们的 <code>messages</code> 列表第一项都是用户的提问。其实 OpenAI（和所有主流 LLM API）都支持一种特殊角色：<code>system</code>。它放在列表最前面，是「写给 LLM 的设定」，不是对话的一部分。
+</p>
+
+<pre><code>messages = [
+    {
+        <span class="s">"role"</span>: <span class="s">"system"</span>,
+        <span class="s">"content"</span>: <span class="s">"""你是一个简洁的天气助手。
+
+规则：
+- 涉及天气的问题，必须先调 get_weather 获取实时数据，不要凭印象编造。
+- 涉及数值计算时，使用 calculate 工具，不要心算。
+- 回答用中文，不超过两句话。"""</span>
+    },
+    {
+        <span class="s">"role"</span>: <span class="s">"user"</span>,
+        <span class="s">"content"</span>: <span class="s">"今天该穿什么衣服？我在北京。"</span>
+    }
+]</code></pre>
+
+<p>
+  加上这条 system 消息后，再问「今天该穿什么衣服？我在北京」，你会看到调度轨迹变了——LLM 这次<strong>主动调了</strong> <code>get_weather('北京')</code>，再根据真实天气给穿衣建议。
+</p>
+
+<blockquote>
+  <p>
+    <strong>为什么 system prompt 有效？</strong> 因为 LLM 在生成回复时，会把整个 messages 列表作为上下文。system 消息排在最前，权重最高，相当于「导演在开拍前给演员的嘱咐」。用户的每句话都会被它过滤一遍。
+  </p>
+</blockquote>
+
+<h3>系统提示该写什么？</h3>
+
+<p>一个好系统提示通常包含四块，按需取用：</p>
+
+<table>
+  <thead>
+    <tr><th>模块</th><th>作用</th><th>本课的例子</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>身份</strong></td>
+      <td>你是谁、为谁服务</td>
+      <td>「你是一个简洁的天气助手」</td>
+    </tr>
+    <tr>
+      <td><strong>能力边界</strong></td>
+      <td>你能做什么、不能做什么</td>
+      <td>（隐含在身份里：只管天气和计算）</td>
+    </tr>
+    <tr>
+      <td><strong>行为规则</strong></td>
+      <td>必须做、禁止做、优先级</td>
+      <td>「涉及天气必须先调 get_weather」「不要心算」</td>
+    </tr>
+    <tr>
+      <td><strong>输出风格</strong></td>
+      <td>语气、长度、格式</td>
+      <td>「中文，不超过两句话」</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>新手最常犯的错</strong>：把所有规则都塞进 system prompt，写得像产品需求文档。规则越多，LLM 记得越少、越容易互相冲突。<strong>只写和当前任务强相关的规则</strong>，能少则少。规则不是写给人看的合规文件，是给 LLM 的注意力锚点。
+  </p>
+</div>
+
+<h2>第二件事：对话循环 = 最简记忆</h2>
+
+<p>
+  现在的 Agent 每次跑完就结束——下次问新问题，它忘了上一轮说过什么。怎么让它「持续对话」？
+</p>
+
+<p>答案极其朴素：<strong>把 messages 列表保留下来，循环接收用户输入</strong>。</p>
+
+<pre><code><span class="c"># 对话循环：外层接收用户输入</span>
+<span class="k">while</span> True:
+    user_input = input(<span class="s">"\n你: "</span>)
+    <span class="k">if</span> user_input.lower() <span class="k">in</span> (<span class="s">"exit"</span>, <span class="s">"quit"</span>, <span class="s">"退出"</span>):
+        <span class="k">break</span>
+
+    messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="c"># Agent 循环：内层处理工具调用</span>
+    <span class="k">while</span> True:
+        resp = client.chat.completions.create(
+            model=<span class="s">"gpt-4o-mini"</span>,
+            messages=messages,
+            tools=tools,
+        )
+        msg = resp.choices[0].message
+        messages.append(msg)
+
+        <span class="k">if not</span> msg.tool_calls:
+            print(<span class="s">f"\n助手: {msg.content}"</span>)
+            <span class="k">break</span>
+
+        <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+            args = json.loads(call.function.arguments)
+            result = tool_map[call.function.name](**args)
+            print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)
+            messages.append({
+                <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                <span class="s">"tool_call_id"</span>: call.id,
+                <span class="s">"content"</span>: result
+            })</code></pre>
+
+<p>
+  注意结构——现在是<strong>两层循环</strong>：
+</p>
+
+<ul>
+  <li><strong>外层</strong>（对话循环）：等用户说话，把话塞进 messages</li>
+  <li><strong>内层</strong>（Agent 循环）：处理这一轮可能出现的多次工具调用，直到 LLM 给出最终回答</li>
+</ul>
+
+<p>
+  而 <code>messages</code> 列表是<strong>跨轮保留</strong>的——这就是「记忆」。第 2 课的 Agent 跑完一次，messages 就丢了；这一课的 Agent 把它存下来，下一轮对话时整段历史一起发给 LLM，LLM 就能引用上下文。
+</p>
+
+<h2>完整代码</h2>
+
+<pre><code><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()
+
+<span class="c"># --- 工具（沿用第 2 课） ---</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>, <span class="s">"广州"</span>: <span class="s">"雷阵雨，31°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">return</span> <span class="s">"错误：只支持数字和 + - * /"</span>
+    <span class="k">try</span>:
+        <span class="k">return</span> str(eval(expression))
+    <span class="k">except</span> Exception <span class="k">as</span> e:
+        <span class="k">return</span> <span class="s">f"错误：{e}"</span>
+
+tools = [
+    {
+        <span class="s">"type"</span>: <span class="s">"function"</span>,
+        <span class="s">"function"</span>: {
+            <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+            <span class="s">"description"</span>: <span class="s">"查询某个城市的实时天气，返回形如 '晴，25°C' 的字符串"</span>,
+            <span class="s">"parameters"</span>: {
+                <span class="s">"type"</span>: <span class="s">"object"</span>,
+                <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+                <span class="s">"required"</span>: [<span class="s">"city"</span>]
+            }
+        }
+    },
+    {
+        <span class="s">"type"</span>: <span class="s">"function"</span>,
+        <span class="s">"function"</span>: {
+            <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+            <span class="s">"description"</span>: <span class="s">"计算一个数学表达式，如 '28 - 25' 或 '(25+28+31)/3'。当需要精确数值计算时使用。"</span>,
+            <span class="s">"parameters"</span>: {
+                <span class="s">"type"</span>: <span class="s">"object"</span>,
+                <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+                <span class="s">"required"</span>: [<span class="s">"expression"</span>]
+            }
+        }
+    }
+]
+
+tool_map = {<span class="s">"get_weather"</span>: get_weather, <span class="s">"calculate"</span>: calculate}
+
+<span class="c"># --- 新增：系统提示 ---</span>
+SYSTEM_PROMPT = <span class="s">"""你是一个简洁的天气助手。
+
+规则：
+- 涉及天气的问题，必须先调 get_weather 获取实时数据，不要凭印象编造。
+- 涉及数值计算时，使用 calculate 工具，不要心算。
+- 回答用中文，不超过两句话。"""</span>
+
+<span class="c"># --- 对话循环 + Agent 循环 ---</span>
+messages = [{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: SYSTEM_PROMPT}]
+
+print(<span class="s">"天气助手已就绪（输入 '退出' 结束）"</span>)
+
+<span class="k">while</span> True:
+    user_input = input(<span class="s">"\n你: "</span>)
+    <span class="k">if</span> user_input.strip() <span class="k">in</span> (<span class="s">"exit"</span>, <span class="s">"quit"</span>, <span class="s">"退出"</span>):
+        <span class="k">break</span>
+
+    messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="k">while</span> True:
+        resp = client.chat.completions.create(
+            model=<span class="s">"gpt-4o-mini"</span>,
+            messages=messages,
+            tools=tools,
+        )
+        msg = resp.choices[0].message
+        messages.append(msg)
+
+        <span class="k">if not</span> msg.tool_calls:
+            print(<span class="s">f"\n助手: {msg.content}"</span>)
+            <span class="k">break</span>
+
+        <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+            args = json.loads(call.function.arguments)
+            result = tool_map[call.function.name](**args)
+            print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)
+            messages.append({
+                <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                <span class="s">"tool_call_id"</span>: call.id,
+                <span class="s">"content"</span>: result
+            })</code></pre>
+
+<h2>跑一下，体会「记忆」</h2>
+
+<p>运行 <code>python agent.py</code>，按这个顺序输入：</p>
+
+<pre><code>你: 北京今天怎么样？
+→ get_weather({'city': '北京'}) = 晴，25°C
+助手: 北京今天晴，气温 25°C，适合外出。
+
+你: 那上海呢？                    <span class="c"># ← 注意：没说"天气"，但 LLM 知道你在问天气</span>
+→ get_weather({'city': '上海'}) = 多云，28°C
+助手: 上海今天多云，气温 28°C，比北京略热。
+
+你: 两个城市平均多少度？
+→ calculate({'expression': '(25+28)/2'}) = 26.5
+助手: 两地平均气温约 26.5°C。</code></pre>
+
+<p>
+  看第二轮——你只说了「那上海呢？」，LLM 就知道你在问天气。这不是魔法，是因为<strong>整段 messages 历史</strong>都被发给了它，它看到了上一轮你问北京天气的上下文。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>洞察：「记忆」是什么？</strong>
+    LLM 本身是<strong>彻底无状态</strong>的——它没有硬盘、没有变量、不记得上一秒发生了什么。所谓「Agent 记住了对话」，真相是：<strong>你的代码把历史消息重新发给了它一遍</strong>。每轮对话，LLM 都是把整个 messages 列表从头读一遍，假装自己「记得」。
+  </p>
+</div>
+
+<blockquote>
+  <p>
+    这条洞察决定了一件事：<strong>记忆会膨胀</strong>。对话越长，messages 越长，每次调用的 token 越多、越贵、越慢。这就是后续课程要解决的核心工程问题之一（摘要、压缩、长期记忆、RAG）。但现在先享受「能用」的状态，把「能用得好」留给后面。
+  </p>
+</blockquote>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把系统提示里的规则删到只剩一句「你是一个天气助手」，再问「今天该穿什么衣服？我在北京」。观察 LLM 还会不会主动调 <code>get_weather</code>。这能让你直观感受 system prompt 对行为的<strong>引导强度</strong>。
+  </li>
+  <li>
+    故意连续问 5 轮天气，然后问「我刚才问过哪些城市？」。LLM 应该能答对——因为整段历史都在 messages 里。这就是「短期记忆」的边界：能记住这次会话里的内容。
+  </li>
+  <li>
+    退出程序，重新运行 <code>python agent.py</code>，再问「我刚才问过哪些城市？」。这次它会答不上来——因为 messages 是内存里的列表，进程一退出就没了。这就是「短期记忆」的另一半边界：跨会话不保留。
+  </li>
+</ol>
+
+<p>
+  实验 3 的现象会自然引出下一课的主题：<strong>长期记忆</strong>。在那之前，先确认你理解了为什么实验 3 会失败——这不是 LLM 的 bug，是设计使然。
+</p>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">关于 system prompt，下面哪句最准确？</p>
+  <ul class="quiz-options">
+    <li>它是 LLM 训练时固化的人格，改不了</li>
+    <li>它必须放在 messages 列表最后，作为收尾</li>
+    <li>它是一条 role="system" 的消息，放在 messages 最前面，是写给 LLM 的行为守则，权重高于普通对话</li>
+    <li>它只用来声明模型名称，不能写规则</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你重启了 Agent 程序，发现它忘了你上一会话说过的所有事。这为什么？</p>
+  <ul class="quiz-options">
+    <li>LLM 的记忆模块坏了，需要重启 API</li>
+    <li>所谓「记忆」只是 messages 列表，进程退出后内存释放，列表就没了——LLM 本身从来就不记得任何事</li>
+    <li>系统提示写错了，需要加一句「请记住所有历史」</li>
+    <li>OpenAI 限制了跨会话存储，需要付费升级</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  系统提示的本质是 prompt engineering。OpenAI 官方有一份非常实用的指南，覆盖规则编写、示例设计、输出格式控制，强烈建议通读：
+</p>
+
+<p>
+  <strong>👉 <a href="https://platform.openai.com/docs/guides/prompt-engineering" target="_blank">Prompt Engineering — OpenAI</a></strong>
+</p>
+
+<p>
+  Anthropic 也有对应文档，措辞略有不同，值得对照两家的口径：
+  <a href="https://docs.anthropic.com/en/docs/build-with-claude/prompt-engineering/overview" target="_blank">Prompt Engineering — Anthropic</a>。后面课程我们会切换到 Claude，提前熟悉一下它的风格有好处。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>你的 Agent 现在有人格、能持续对话，但还是「金鱼记忆」——重启就忘。下一课我们给它加<strong>长期记忆</strong>：把对话历史写到文件（或数据库），下次启动时读回来。这是从「能跑」到「能用」的最后一公里。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>系统提示不知道怎么写？把你想让 Agent 干的事告诉我，我帮你写一版。对话循环报错？把错误贴出来。LLM 行为反常？把调度轨迹和 system prompt 一起贴来，我们一起 debug。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0002-let-agent-choose-tools.html">第 2 课：让 Agent 自己选工具</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'c': '正确。system 消息排在最前，LLM 在生成回复时把它当作最高权重的设定。注意它不是模型训练时固化的——每次调用你都可以改。这也是为什么同一个模型在不同产品里表现完全不同。',
+      'b': '正确。这是理解 Agent 最重要的洞察之一：LLM 是无状态的，「记忆」是工程上的把戏——你的代码把历史消息重新喂给 LLM。一旦代码不喂了（进程退出、列表清空），LLM 就「忘了」。跨会话记忆必须靠你的代码持久化（文件、数据库），不能指望 LLM 自己记。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

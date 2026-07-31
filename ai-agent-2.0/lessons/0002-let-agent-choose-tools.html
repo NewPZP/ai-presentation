@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 2 课 · 让 Agent 自己选工具</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 2 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">让 Agent 自己选工具</h1>
+  <p class="lesson-meta">从一把锤子到工具箱 · 约 10 分钟</p>
+</header>
+
+<main>
+
+<h2>上节回顾</h2>
+
+<p>
+  <a href="./0001-what-is-an-ai-agent.html">第 1 课</a> 我们写了一个只会一件事的 Agent：查天气。它已经具备 Agent 的三要素（LLM + 工具 + 循环），但只有<strong>一个</strong>工具，所以 LLM 没什么可"选"的——每次都得调 <code>get_weather</code>。
+</p>
+
+<p>
+  这一课我们再加一个工具——<strong>计算器</strong>。然后你会亲眼看到一件让很多人第一次「啊原来 Agent 是这么回事」的事：LLM 在两个工具之间自己挑，有时候甚至<strong>选择不用工具</strong>。
+</p>
+
+<h2>加一个工具有几步？</h2>
+
+<p>就两步：</p>
+
+<ol>
+  <li><strong>写一个 Python 函数</strong>（和平时写函数一模一样）</li>
+  <li><strong>给它写一份"说明书"</strong>，加到 <code>tools</code> 列表里</li>
+</ol>
+
+<p>我们来加一个 <code>calculate</code> 工具：</p>
+
+<pre><code><span class="c"># 工具 2：算术计算</span>
+<span class="k">def</span> calculate(expression: str) -> str:
+    <span class="s">"""安全地计算一个数学表达式，如 '28 - 25' 或 '(25+28+31)/3'"""</span>
+    <span class="c"># 只允许数字和基本运算符，防止注入</span>
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">return</span> <span class="s">"错误：只支持数字和 + - * /"</span>
+    <span class="k">try</span>:
+        <span class="k">return</span> str(eval(expression))  <span class="c"># 教学示例，生产环境别用 eval</span>
+    <span class="k">except</span> Exception <span class="k">as</span> e:
+        <span class="k">return</span> <span class="s">f"错误：{e}"</span></code></pre>
+
+<p>然后是它的说明书。注意 <code>description</code> 这一行——这是<strong>整堂课最关键的地方</strong>，下面会专门讲：</p>
+
+<pre><code>{
+    <span class="s">"type"</span>: <span class="s">"function"</span>,
+    <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+        <span class="s">"description"</span>: <span class="s">"计算一个数学表达式，如 '28 - 25' 或 '(25+28+31)/3'。当需要精确数值计算时使用。"</span>,
+        <span class="s">"parameters"</span>: {
+            <span class="s">"type"</span>: <span class="s">"object"</span>,
+            <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+            <span class="s">"required"</span>: [<span class="s">"expression"</span>]
+        }
+    }
+}</code></pre>
+
+<h2>完整代码</h2>
+
+<p>在上一课基础上改两处：① <code>tools</code> 列表多一项；② 用一个 <code>tool_map</code> 把函数名映射到函数，循环里就不用写一堆 <code>if</code> 了。</p>
+
+<pre><code><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()
+
+<span class="c"># --- 工具定义 ---</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>, <span class="s">"广州"</span>: <span class="s">"雷阵雨，31°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">return</span> <span class="s">"错误：只支持数字和 + - * /"</span>
+    <span class="k">try</span>:
+        <span class="k">return</span> str(eval(expression))
+    <span class="k">except</span> Exception <span class="k">as</span> e:
+        <span class="k">return</span> <span class="s">f"错误：{e}"</span>
+
+<span class="c"># --- 工具说明书（给 LLM 看的） ---</span>
+tools = [
+    {
+        <span class="s">"type"</span>: <span class="s">"function"</span>,
+        <span class="s">"function"</span>: {
+            <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+            <span class="s">"description"</span>: <span class="s">"查询某个城市的实时天气，返回形如 '晴，25°C' 的字符串"</span>,
+            <span class="s">"parameters"</span>: {
+                <span class="s">"type"</span>: <span class="s">"object"</span>,
+                <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+                <span class="s">"required"</span>: [<span class="s">"city"</span>]
+            }
+        }
+    },
+    {
+        <span class="s">"type"</span>: <span class="s">"function"</span>,
+        <span class="s">"function"</span>: {
+            <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+            <span class="s">"description"</span>: <span class="s">"计算一个数学表达式，如 '28 - 25' 或 '(25+28+31)/3'。当需要精确数值计算时使用。"</span>,
+            <span class="s">"parameters"</span>: {
+                <span class="s">"type"</span>: <span class="s">"object"</span>,
+                <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+                <span class="s">"required"</span>: [<span class="s">"expression"</span>]
+            }
+        }
+    }
+]
+
+<span class="c"># --- 函数名 → 函数 的映射，循环里好调度 ---</span>
+tool_map = {
+    <span class="s">"get_weather"</span>: get_weather,
+    <span class="s">"calculate"</span>: calculate,
+}
+
+<span class="c"># --- Agent 循环 ---</span>
+messages = [{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京、上海、广州今天的平均温度是多少？"</span>}]
+
+<span class="k">while</span> True:
+    resp = client.chat.completions.create(
+        model=<span class="s">"gpt-4o-mini"</span>,
+        messages=messages,
+        tools=tools,
+    )
+    msg = resp.choices[0].message
+    messages.append(msg)
+
+    <span class="k">if not</span> msg.tool_calls:
+        print(<span class="s">"\n【最终回答】"</span>, msg.content)
+        <span class="k">break</span>
+
+    <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+        args = json.loads(call.function.arguments)
+        result = tool_map[call.function.name](**args)
+        print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)  <span class="c"># 打印调度轨迹</span>
+        messages.append({
+            <span class="s">"role"</span>: <span class="s">"tool"</span>,
+            <span class="s">"tool_call_id"</span>: call.id,
+            <span class="s">"content"</span>: result
+        })</code></pre>
+
+<h2>跑一下，看 Agent 在干什么</h2>
+
+<p>运行 <code>python agent.py</code>，你会看到类似这样的输出（具体行数和顺序由 LLM 决定，可能略有不同）：</p>
+
+<pre><code>→ get_weather({'city': '北京'}) = 晴，25°C
+→ get_weather({'city': '上海'}) = 多云，28°C
+→ get_weather({'city': '广州'}) = 雷阵雨，31°C
+→ calculate({'expression': '(25+28+31)/3'}) = 28.0
+
+【最终回答】 北京、上海、广州今天的平均温度约为 28.0°C。</code></pre>
+
+<p>
+  看着这四行调度轨迹，停一秒钟体会一下发生了什么：LLM 自己<strong>规划了路径</strong>——「先查三个城市，再做平均」。这段路径不是你写死的，是你给它工具和问题之后，它自己想出来的。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>这就是 Agent 的"啊哈时刻"。</strong>
+    第 1 课我们用文字定义了 Agent，这一课你第一次<strong>看见</strong>它。注意那行 <code>calculate({'expression': '(25+28+31)/3'})</code>——LLM 自己决定把三个数字塞进一个表达式，然后调你给的计算器。你没有在代码里任何地方写过「先查三个城市再算平均」。
+  </p>
+</div>
+
+<h2>关键观察：LLM 会偷懒</h2>
+
+<p>
+  多跑几次，或者把问题换成「北京比上海低几度？」，你可能会看到不同的轨迹：
+</p>
+
+<pre><code>→ get_weather({'city': '北京'}) = 晴，25°C
+→ get_weather({'city': '上海'}) = 多云，28°C
+
+【最终回答】 北京比上海低 3°C。</code></pre>
+
+<p>
+  注意——这次 LLM <strong>没有</strong>调 <code>calculate</code>，它自己心算 <code>28 - 25 = 3</code> 直接答了。这不是 bug，这是<strong>正确行为</strong>。
+</p>
+
+<blockquote>
+  <p>
+    <strong>洞察：</strong> 工具不是越多越好，LLM 会自己判断什么时候需要工具。简单的减法它能心算，就不调计算器；如果是「(25+28+31)/3」这种它不太信任自己心算的，它才会调 <code>calculate</code> 拿一个确定结果。
+  </p>
+</blockquote>
+
+<p>
+  这引出 Agent 工程的一条重要原则——<strong>给工具，不是逼工具</strong>。你提供能力，LLM 决定用不用。强迫 LLM 每次都调某个工具（比如在系统提示里写"必须先调 calculate"），通常会让它变慢、变贵、还容易出错。
+</p>
+
+<h2>为什么 <code>description</code> 这么重要？</h2>
+
+<p>
+  LLM 选工具时，它<strong>看不到</strong>你的函数实现，只能看到三样东西：
+</p>
+
+<ol>
+  <li>函数名（<code>name</code>）</li>
+  <li>说明文字（<code>description</code>）</li>
+  <li>参数结构（<code>parameters</code> 的 JSON Schema）</li>
+</ol>
+
+<p>
+  这就意味着——<strong>description 是写给 LLM 看的接口文档</strong>。写得烂，LLM 就会用错工具、用错参数、或者干脆不用。
+</p>
+
+<table>
+  <thead>
+    <tr><th>写法</th><th>结果</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>"description": "计算"</code></td>
+      <td>太模糊。LLM 不知道能算什么、参数长什么样，大概率不会用它。</td>
+    </tr>
+    <tr>
+      <td><code>"description": "计算一个数学表达式，如 '28 - 25' 或 '(25+28+31)/3'。当需要精确数值计算时使用。"</code></td>
+      <td>有例子、有适用场景。LLM 能判断"现在该不该调它"。</td>
+    </tr>
+    <tr>
+      <td><code>"description": "本工具接收任意 Python 表达式并返回结果。"</code></td>
+      <td>危险。LLM 可能会塞 <code>__import__('os').system('rm -rf /')</code> 进来。</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  写 description 的口诀：<strong>说清楚它能干什么、什么时候该用、给一两个例子</strong>。把它当成给一个聪明但不了解你代码库的新同事写接口文档。
+</p>
+
+<h2>动手实验</h2>
+
+<p>把代码跑起来后，依次试这几个问题，观察调度轨迹的不同：</p>
+
+<ol>
+  <li><code>"北京和上海今天温差多少？"</code> —— LLM 会调 calculate 吗？</li>
+  <li><code>"北京、上海、广州三座城市温度的方差是多少？"</code> —— 这次它大概率会调 calculate。</li>
+  <li><code>"今天该穿什么衣服？我在北京。"</code> —— 看它会不会主动查天气（这是个判断题：任务里没明说"查天气"，但隐含需要）。</li>
+</ol>
+
+<p>
+  第 3 个问题特别有意思。如果 LLM 没主动查天气，你可以在系统提示里加一句引导（下一课会讲系统提示的设计）。先把现象记下来。
+</p>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">你给 Agent 加了一个 <code>search_web</code> 工具，但 LLM 从来不调它，哪怕问它"最新新闻"也自己编。最可能的原因是？</p>
+  <ul class="quiz-options">
+    <li>LLM 太笨，需要换更大的模型</li>
+    <li>description 写得不清楚，LLM 不知道这个工具该在什么时候用，或者不知道它存在</li>
+    <li>tools 列表里工具太多，LLM 选不过来</li>
+    <li>Python 函数没有 type hint</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你希望 Agent 帮用户管理待办事项。下面哪个工具集最合理？</p>
+  <ul class="quiz-options">
+    <li>一个大工具 do_everything(action, params)，所有操作都走它</li>
+    <li>100 个细粒度工具，每个数据库操作（增删改查）都单独一个</li>
+    <li>几个语义清晰的工具：add_todo、list_todos、complete_todo、delete_todo</li>
+    <li>只给一个 query_database(sql) 工具，让 LLM 自己写 SQL</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  这一课的"工具设计"部分，Anthropic 的指南里有一节专门讲工具选择的实战经验，强烈建议读：
+</p>
+
+<p>
+  <strong>👉 <a href="https://www.anthropic.com/engineering/building-effective-agents" target="_blank">Building Effective Agents — Anthropic</a></strong>（重点看 "Agents" 一节里关于工具描述和工具选择的讨论）
+</p>
+
+<p>
+  OpenAI 的 function calling 文档里有关于 <a href="https://platform.openai.com/docs/guides/function-calling" target="_blank">description 写法和参数 schema 的最佳实践</a>，更偏技术细节，写自己的工具时值得对照。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你的 Agent 已经会查天气、会算数、会自己挑工具。但它还是<strong>无记忆</strong>的——每次运行都是从零开始。下一课我们给它加<strong>系统提示</strong>（让 Agent 有人格、有规矩）和<strong>最简单的记忆</strong>（让它能记住这次对话里说过的话）。这是从"能跑一次"到"能持续对话"的关键一步。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>跑代码遇到报错？把错误贴给我。LLM 行为和你预期不一样？把调度轨迹贴给我，我们一起看它为什么这么选。想加个奇怪的工具试试？直接说。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0001-what-is-an-ai-agent.html">第 1 课：什么是 AI Agent</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。description 是 LLM 唯一能看到的"工具说明书"。写得太模糊（"计算"、"搜索"），LLM 就不知道什么时候该用。这是新手最常踩的坑——以为工具定义了就会用，其实 description 才是决定 LLM 用不用它的关键。',
+      'c': '正确。工具设计的原则是"按语义动作划分"——每个工具对应一个用户能理解的动作。A 太粗（LLM 不知道怎么调），B 太细（LLM 选不过来还容易组合出错），D 把 SQL 暴露给 LLM 既危险又难用。C 让每个工具的意图清晰，LLM 一看就知道"加待办用 add_todo"。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

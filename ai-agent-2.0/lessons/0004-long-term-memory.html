@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 4 课 · 长期记忆</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 4 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">长期记忆</h1>
+  <p class="lesson-meta">让 Agent 重启后还记得你 · 约 14 分钟</p>
+</header>
+
+<main>
+
+<h2>上一课留下的悬念</h2>
+
+<p>
+  <a href="./0003-system-prompt-and-memory.html">第 3 课</a> 结尾做了个实验：退出程序、重新运行，再问「我刚才问过哪些城市？」——Agent 答不上来。原因是 messages 列表存在内存里，进程一退出就没了。
+</p>
+
+<p>
+  这一课解决这个问题。方式比你想的朴素：<strong>把 messages 写到文件，下次启动时读回来</strong>。
+</p>
+
+<blockquote>
+  <p>
+    第 3 课那条洞察的另一半：<strong>既然「记忆」是代码喂给 LLM 的，那只要代码把它存下来，下次再喂回去，就有了长期记忆</strong>。LLM 本身不需要变，变的是你的工程。
+  </p>
+</blockquote>
+
+<h2>三种记忆，别混在一起</h2>
+
+<p>在动手之前，先把术语理清楚——这是后面所有讨论的基础：</p>
+
+<table>
+  <thead>
+    <tr><th>类型</th><th>存哪</th><th>生命周期</th><th>本课对应</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>短期记忆</strong></td>
+      <td>messages 列表（内存）</td>
+      <td>一次会话内，进程退出就没</td>
+      <td>第 3 课已实现</td>
+    </tr>
+    <tr>
+      <td><strong>长期记忆（会话历史）</strong></td>
+      <td>文件 / 数据库</td>
+      <td>跨会话，按用户或会话 ID 持久化</td>
+      <td><strong>本课要实现</strong></td>
+    </tr>
+    <tr>
+      <td><strong>长期记忆（知识 / 事实）</strong></td>
+      <td>向量数据库、知识图谱</td>
+      <td>跨会话，按语义检索</td>
+      <td>后续课程（RAG 那块）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  本课只做第 2 种——<strong>把整段对话历史存下来</strong>。第 3 种（向量检索）是更高级的玩法，等基础打牢再讲，不然容易一上来就被各种「RAG」「embedding」术语绕晕。
+</p>
+
+<h2>最小实现：JSON 文件</h2>
+
+<p>
+  先用最朴素的方式——一个 JSON 文件。每个用户一个文件，文件里就是他的 messages 列表。
+</p>
+
+<pre><code><span class="k">import</span> json
+<span class="k">import</span> os
+
+MEMORY_FILE = <span class="s">"memory.json"</span>  <span class="c"># 真实项目里按用户 ID 分文件</span>
+
+<span class="k">def</span> load_messages():
+    <span class="s">"""启动时从文件读历史；没文件就新建，带系统提示"""</span>
+    <span class="k">if</span> os.path.exists(MEMORY_FILE):
+        <span class="k">with</span> open(MEMORY_FILE, <span class="s">"r"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+            <span class="k">return</span> json.load(f)
+    <span class="c"># 没有历史 → 初始化系统提示</span>
+    <span class="k">return</span> [{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: SYSTEM_PROMPT}]
+
+<span class="k">def</span> save_messages(messages):
+    <span class="s">"""每次对话后把整段历史写回文件"""</span>
+    <span class="k">with</span> open(MEMORY_FILE, <span class="s">"w"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)</code></pre>
+
+<p>然后把第 3 课的对话循环稍改两行：</p>
+
+<pre><code>messages = load_messages()  <span class="c"># ← 启动时读历史（之前是新建空列表）</span>
+
+<span class="k">while</span> True:
+    user_input = input(<span class="s">"\n你: "</span>)
+    <span class="k">if</span> user_input.strip() <span class="k">in</span> (<span class="s">"exit"</span>, <span class="s">"quit"</span>, <span class="s">"退出"</span>):
+        save_messages(messages)  <span class="c"># ← 退出时存历史（之前什么都不做）</span>
+        <span class="k">break</span>
+
+    messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="k">while</span> True:
+        resp = client.chat.completions.create(
+            model=<span class="s">"gpt-4o-mini"</span>,
+            messages=messages,
+            tools=tools,
+        )
+        msg = resp.choices[0].message
+        messages.append(msg)
+
+        <span class="k">if not</span> msg.tool_calls:
+            print(<span class="s">f"\n助手: {msg.content}"</span>)
+            save_messages(messages)  <span class="c"># ← 每轮也存一次，防止意外崩溃丢历史</span>
+            <span class="k">break</span>
+
+        <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+            args = json.loads(call.function.arguments)
+            result = tool_map[call.function.name](**args)
+            print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)
+            messages.append({
+                <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                <span class="s">"tool_call_id"</span>: call.id,
+                <span class="s">"content"</span>: result
+            })</code></pre>
+
+<p>就这么多。跑起来后做上一课的实验 3：</p>
+
+<pre><code><span class="c"># 第一次运行</span>
+你: 我在北京
+助手: 好的，已记下你在北京。
+
+<span class="c"># 退出，重新运行 python agent.py</span>
+
+你: 我在哪个城市？
+助手: 你之前告诉我你在北京。</code></pre>
+
+<p>它记住了。恭喜，你的 Agent 有了长期记忆。</p>
+
+<h2>但马上会撞墙：记忆会膨胀</h2>
+
+<p>
+  跑通后，故意聊个 20 轮天气（每轮都触发工具调用）。然后再聊几轮，你大概率会遇到两类错误之一：
+</p>
+
+<pre><code><span class="c"># 错误 A：超过模型上下文窗口</span>
+openai.BadRequestError: Error code: 400 - {
+  <span class="s">"error"</span>: {
+    <span class="s">"message"</span>: <span class="s">"This model's maximum context length is 128000 tokens..."</span>
+  }
+}
+
+<span class="c"># 错误 B：没报错但变贵变慢</span>
+<span class="c"># 每轮都把全部历史发过去，token 消耗线性增长</span></code></pre>
+
+<p>
+  这就是第 3 课预告过的问题：<strong>记忆会膨胀</strong>。每轮对话都把完整历史喂给 LLM，对话越长，每次调用的 token 越多——直到撑爆模型的上下文窗口。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>这是 Agent 工程的核心难题之一</strong>，没有银弹。下面介绍三种主流应对方式，从最简单到最复杂。本课只要你能实现「最简版」就够了，但要知道后面有更好的方案。
+  </p>
+</div>
+
+<h3>方案 1：滑动窗口（最简单）</h3>
+
+<p>
+  只保留最近 N 轮对话，老的消息直接丢弃。N 通常取 5–10。
+</p>
+
+<pre><code><span class="k">def</span> trim_messages(messages, max_turns=8):
+    <span class="s">"""保留 system + 最近 max_turns 条消息"""</span>
+    system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] == <span class="s">"system"</span>]
+    non_system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] != <span class="s">"system"</span>]
+    <span class="c"># 取最后 N 条，但要小心 tool 消息不能脱离 tool_call 单独存在</span>
+    trimmed = non_system[-max_turns:]
+    <span class="k">return</span> system + trimmed</code></pre>
+
+<p>
+  <strong>优点</strong>：5 行代码搞定，token 消耗可控。<br>
+  <strong>缺点</strong>：早期对话内容彻底丢失。如果你 10 轮前告诉它「我在北京」，第 11 轮它就忘了。
+</p>
+
+<h3>方案 2：摘要压缩（折中）</h3>
+
+<p>
+  当 messages 超过阈值时，让 LLM 把老消息<strong>总结成一段摘要</strong>，用摘要替换老消息。
+</p>
+
+<pre><code><span class="k">def</span> summarize_old_messages(messages, keep_recent=4):
+    <span class="s">"""把老消息压缩成摘要，保留最近 keep_recent 轮"""</span>
+    system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] == <span class="s">"system"</span>]
+    non_system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] != <span class="s">"system"</span>]
+
+    old = non_system[:-keep_recent]
+    recent = non_system[-keep_recent:]
+
+    <span class="k">if not</span> old:
+        <span class="k">return</span> messages  <span class="c"># 没什么可压缩的</span>
+
+    <span class="c"># 让 LLM 把 old 总结成一段摘要</span>
+    summary_resp = client.chat.completions.create(
+        model=<span class="s">"gpt-4o-mini"</span>,
+        messages=[{
+            <span class="s">"role"</span>: <span class="s">"user"</span>,
+            <span class="s">"content"</span>: <span class="s">f"请用 3 句话总结以下对话的关键信息：\n\n{json.dumps(old, ensure_ascii=False)}"</span>
+        }]
+    )
+    summary = summary_resp.choices[0].message.content
+
+    <span class="k">return</span> system + [{
+        <span class="s">"role"</span>: <span class="s">"system"</span>,
+        <span class="s">"content"</span>: <span class="s">f"之前的对话摘要：{summary}"</span>
+    }] + recent</code></pre>
+
+<p>
+  <strong>优点</strong>：保留关键信息（用户在哪、目标是什么），token 消耗可控。<br>
+  <strong>缺点</strong>：多一次 LLM 调用，有延迟；摘要可能丢细节；实现复杂度上升。
+</p>
+
+<h3>方案 3：向量化检索（最复杂，留给后续课）</h3>
+
+<p>
+  把每条消息存进向量数据库（如 Chroma、Qdrant），下次对话时<strong>用相关问题检索出最相关的几条历史</strong>，只把这些喂给 LLM。这就是 RAG 的思路。
+</p>
+
+<p>
+  本课<strong>不实现</strong>这个，因为：① 需要引入 embedding 模型和向量库，依赖一多概念就乱；② 在你还没把基础 Agent 跑顺之前，RAG 通常是把问题搞复杂的根源。等你做完前几课、确认真的需要它时，我们再开一整课讲。
+</p>
+
+<h2>本课的完整代码</h2>
+
+<p>下面是带滑动窗口的完整版本（方案 1 + 持久化）：</p>
+
+<pre><code><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json, os
+
+client = OpenAI()
+
+<span class="c"># --- 工具（沿用） ---</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>, <span class="s">"广州"</span>: <span class="s">"雷阵雨，31°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">return</span> <span class="s">"错误：只支持数字和 + - * /"</span>
+    <span class="k">try</span>:
+        <span class="k">return</span> str(eval(expression))
+    <span class="k">except</span> Exception <span class="k">as</span> e:
+        <span class="k">return</span> <span class="s">f"错误：{e}"</span>
+
+tools = [
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询某个城市的实时天气"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]}
+    }},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+        <span class="s">"description"</span>: <span class="s">"计算数学表达式，如 '28 - 25'。需要精确数值计算时使用。"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expression"</span>]}
+    }}
+]
+tool_map = {<span class="s">"get_weather"</span>: get_weather, <span class="s">"calculate"</span>: calculate}
+
+SYSTEM_PROMPT = <span class="s">"""你是一个简洁的天气助手。
+
+规则：
+- 涉及天气的问题，必须先调 get_weather 获取实时数据。
+- 涉及数值计算时，使用 calculate 工具。
+- 回答用中文，不超过两句话。"""</span>
+
+<span class="c"># --- 记忆：持久化 + 滑动窗口 ---</span>
+MEMORY_FILE = <span class="s">"memory.json"</span>
+MAX_TURNS = 20  <span class="c"># 保留最近 20 条非 system 消息</span>
+
+<span class="k">def</span> load_messages():
+    <span class="k">if</span> os.path.exists(MEMORY_FILE):
+        <span class="k">with</span> open(MEMORY_FILE, <span class="s">"r"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+            <span class="k">return</span> json.load(f)
+    <span class="k">return</span> [{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: SYSTEM_PROMPT}]
+
+<span class="k">def</span> save_messages(messages):
+    <span class="k">with</span> open(MEMORY_FILE, <span class="s">"w"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+        json.dump(messages, f, ensure_ascii=False, indent=2)
+
+<span class="k">def</span> trim_messages(messages, max_turns=MAX_TURNS):
+    <span class="s">"""保留 system 消息 + 最近 max_turns 条非 system 消息。
+    注意：tool 消息必须紧跟在对应的 tool_call 之后，否则 API 会报错。
+    这里简化处理——直接按条数截断，复杂场景需要更小心的对齐。"""</span>
+    system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] == <span class="s">"system"</span>]
+    non_system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] != <span class="s">"system"</span>]
+    <span class="k">return</span> system + non_system[-max_turns:]
+
+<span class="c"># --- 主循环 ---</span>
+messages = load_messages()
+print(<span class="s">f"天气助手已就绪（已加载 {len(messages)} 条历史消息）"</span>)
+
+<span class="k">while</span> True:
+    user_input = input(<span class="s">"\n你: "</span>)
+    <span class="k">if</span> user_input.strip() <span class="k">in</span> (<span class="s">"exit"</span>, <span class="s">"quit"</span>, <span class="s">"退出"</span>):
+        save_messages(messages)
+        <span class="k">break</span>
+
+    messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="c"># 发送前裁剪，避免 token 爆炸</span>
+    messages_to_send = trim_messages(messages)
+
+    <span class="k">while</span> True:
+        resp = client.chat.completions.create(
+            model=<span class="s">"gpt-4o-mini"</span>,
+            messages=messages_to_send,
+            tools=tools,
+        )
+        msg = resp.choices[0].message
+        messages.append(msg)
+        messages_to_send.append(msg)
+
+        <span class="k">if not</span> msg.tool_calls:
+            print(<span class="s">f"\n助手: {msg.content}"</span>)
+            save_messages(messages)
+            <span class="k">break</span>
+
+        <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+            args = json.loads(call.function.arguments)
+            result = tool_map[call.function.name](**args)
+            print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)
+            tool_msg = {
+                <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                <span class="s">"tool_call_id"</span>: call.id,
+                <span class="s">"content"</span>: result
+            }
+            messages.append(tool_msg)
+            messages_to_send.append(tool_msg)</code></pre>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    跑通后做跨会话测试：第一次运行说「我在北京」，退出，重开问「我在哪个城市」。确认它能答对。
+  </li>
+  <li>
+    打开 <code>memory.json</code> 看看里面长什么样。你会直观看到「记忆」就是一堆 JSON——没有什么神秘的，就是上次对话的 messages 列表。
+  </li>
+  <li>
+    把 <code>MAX_TURNS</code> 改成 4，故意聊 10 轮，然后问第 1 轮聊过的事。它会答不上来——这就是滑动窗口的代价。再改回 20，看能不能答对。
+  </li>
+  <li>
+    （进阶）试着把存储从 JSON 文件换成 SQLite。代码改动很小（<code>json.load</code> → <code>sqlite3</code> 查询），但能体会「持久化层」和「Agent 逻辑」分离的好处。这一步是为后面部署做铺垫——线上服务不能依赖本地文件。
+  </li>
+</ol>
+
+<h2>一个容易被忽略的坑：tool 消息的完整性</h2>
+
+<p>
+  代码里 <code>trim_messages</code> 有个简化处理：直接按条数截断。但 OpenAI 的 API 有个硬规则——<strong>每条 tool 消息必须紧跟在对应的 tool_call 之后</strong>，否则会报 <code>"tool message without preceding tool_call"</code> 错误。
+</p>
+
+<p>
+  如果裁剪刚好把 <code>assistant</code> 消息（含 tool_call）留下了，但对应的 <code>tool</code> 消息被截掉了，就会触发这个错误。本课代码在大多数情况能跑通（因为 <code>MAX_TURNS=20</code> 通常包含完整的轮次），但生产环境需要更小心的对齐逻辑——<strong>裁剪要在「完整的一轮」边界上裁</strong>，不能在轮中间切。
+</p>
+
+<div class="callout">
+  <p>
+    这是工程代码和教学代码的差距所在。本课给你的是「能跑且能理解」的版本，生产级实现需要处理边界情况——这是后续「Agent 工程化」课程的主题。先把现象记下来：哪天你遇到这个报错，就知道原因了。
+  </p>
+</div>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">Agent 能「记住」跨会话的对话，本质上是因为？</p>
+  <ul class="quiz-options">
+    <li>LLM 有内置的长期记忆模块，自动存储历史</li>
+    <li>你的代码把上次对话的 messages 存到文件/数据库，这次启动时读回来再发给 LLM</li>
+    <li>OpenAI 的 API 会自动帮你保存所有历史</li>
+    <li>系统提示里写了「请记住所有对话」</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你的 Agent 用了滑动窗口保留最近 10 条消息。用户第 1 轮说「我在北京」，聊到第 15 轮时问「我在哪个城市？」——Agent 答不出来。下面哪种处理最合理？</p>
+  <ul class="quiz-options">
+    <li>把 MAX_TURNS 改成 1000，永不丢失</li>
+    <li>每轮都让 LLM 把所有历史总结一遍</li>
+    <li>把「用户在哪」这类关键事实单独抽出来存到「用户档案」里，每轮作为 system 消息注入——这就是「事实记忆」和「对话历史」分离的设计</li>
+    <li>直接换更大的模型，上下文窗口够大就行</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  这一课的「记忆会膨胀」问题，Lilian Weng 在她的经典文章里有系统梳理（短期 / 长期 / 检索的划分就来自这里）：
+</p>
+
+<p>
+  <strong>👉 <a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank">LLM Powered Autonomous Agents — Lilian Weng</a></strong>（重点看 "Memory" 一节）
+</p>
+
+<p>
+  OpenAI 的 Cookbook 里有一个「<a href="https://cookbook.openai.com/examples/how_to_handle_rate_limits" target="_blank">管理长对话</a>」的实战示例，演示了滑动窗口和摘要压缩的具体实现，值得对照本课代码看一遍。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你的 Agent 已经具备实战的四块基础：工具、循环、系统提示、长期记忆。下一课是个小里程碑——我们把这些组件重构成一个<strong>清晰的 Agent 类</strong>（封装成 <code>class WeatherAgent</code>），并加一个被很多人忽略但生产级必备的东西：<strong>错误处理与重试</strong>。这是从「能跑」走向「能稳定跑」的关键一步。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>memory.json 格式看不懂？滑动窗口裁剪后报 tool 消息错误？想让 Agent 记住的不只是对话、还有用户画像？把场景告诉我，我帮你设计存储结构。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0003-system-prompt-and-memory.html">第 3 课：系统提示与最简记忆</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。这是贯穿整个课程的核心洞察：LLM 是无状态的，所有「记忆」都是工程上的把戏——你的代码负责存，下次再喂回去。理解了这点，后面所有关于记忆的高级概念（RAG、向量检索、知识图谱）都不会神秘，它们只是「怎么存」和「怎么取」的不同方案。',
+      'c': '正确。这是 Agent 工程的关键设计模式：把「对话历史」（流水账）和「事实记忆」（关键状态）分开存。对话历史可以裁剪/摘要，事实记忆则永远作为 system 消息注入。A 不可持续（token 会爆），B 太贵太慢，D 只是拖延问题，不解决。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

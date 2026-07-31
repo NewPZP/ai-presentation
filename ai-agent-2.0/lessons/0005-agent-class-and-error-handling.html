@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 5 课 · 封装 Agent 类与错误处理</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 5 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">封装 Agent 类与错误处理</h1>
+  <p class="lesson-meta">从「能跑」到「能稳定跑」· 约 15 分钟</p>
+</header>
+
+<main>
+
+<h2>前四课的代码长什么样？</h2>
+
+<p>
+  走到这儿，你的 <code>agent.py</code> 应该有 100 多行了——工具定义、tools 列表、tool_map、系统提示、load/save messages、trim、两层循环……全堆在一个文件、平铺在模块顶层。能跑，但有几个问题开始浮现：
+</p>
+
+<ol>
+  <li><strong>状态散落</strong>：<code>messages</code>、<code>MEMORY_FILE</code>、<code>SYSTEM_PROMPT</code> 都是全局变量，想改成「多用户」就得满文件改。</li>
+  <li><strong>循环和逻辑耦合</strong>：Agent 循环、对话循环、工具调度混在一起，想换 LLM（比如从 OpenAI 换 Claude）要大改。</li>
+  <li><strong>没有错误处理</strong>：API 一超时、一报错，整个程序就崩。用户聊到一半历史就丢了。</li>
+</ol>
+
+<p>
+  这一课把它们整理成两个东西：<strong>一个 Agent 类</strong>（封装状态和行为）+ <strong>一层错误处理</strong>（应对生产环境的不可控）。这是从「玩具」走向「能上线」的第一道分水岭。
+</p>
+
+<h2>第一件事：封装成类</h2>
+
+<p>目标长这样——一个 <code>WeatherAgent</code> 类，把所有状态和方法收拢在一起：</p>
+
+<pre><code><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json, os, time
+<span class="k">from</span> typing <span class="k">import</span> Callable
+
+<span class="k">class</span> WeatherAgent:
+    <span class="s">"""一个带工具、记忆、错误处理的最小 Agent 类。"""</span>
+
+    <span class="k">def</span> __init__(
+        self,
+        system_prompt: str,
+        memory_file: str = <span class="s">"memory.json"</span>,
+        max_turns: int = 20,
+        model: str = <span class="s">"gpt-4o-mini"</span>,
+    ):
+        self.client = OpenAI()
+        self.model = model
+        self.system_prompt = system_prompt
+        self.memory_file = memory_file
+        self.max_turns = max_turns
+
+        self.tools: list[dict] = []          <span class="c"># tool 定义（给 LLM 看的）</span>
+        self.tool_map: dict[str, Callable] = {}  <span class="c"># name → 函数</span>
+
+        self.messages = self._load_messages()
+
+    <span class="c"># --- 工具注册 ---</span>
+    <span class="k">def</span> register_tool(self, name: str, description: str, params: dict, fn: Callable):
+        <span class="s">"""把一个 Python 函数注册成 Agent 可用的工具"""</span>
+        self.tools.append({
+            <span class="s">"type"</span>: <span class="s">"function"</span>,
+            <span class="s">"function"</span>: {
+                <span class="s">"name"</span>: name,
+                <span class="s">"description"</span>: description,
+                <span class="s">"parameters"</span>: params,
+            }
+        })
+        self.tool_map[name] = fn
+
+    <span class="c"># --- 记忆 ---</span>
+    <span class="k">def</span> _load_messages(self) -> list:
+        <span class="k">if</span> os.path.exists(self.memory_file):
+            <span class="k">with</span> open(self.memory_file, <span class="s">"r"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+                <span class="k">return</span> json.load(f)
+        <span class="k">return</span> [{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: self.system_prompt}]
+
+    <span class="k">def</span> _save_messages(self):
+        <span class="k">with</span> open(self.memory_file, <span class="s">"w"</span>, encoding=<span class="s">"utf-8"</span>) <span class="k">as</span> f:
+            json.dump(self.messages, f, ensure_ascii=False, indent=2)
+
+    <span class="k">def</span> _trim(self, messages: list) -> list:
+        <span class="s">"""保留 system + 最近 N 条；按完整轮次对齐（避免 tool 消息孤立）"""</span>
+        system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] == <span class="s">"system"</span>]
+        non_system = [m <span class="k">for</span> m <span class="k">in</span> messages <span class="k">if</span> m[<span class="s">"role"</span>] != <span class="s">"system"</span>]
+        <span class="k">return</span> system + non_system[-self.max_turns:]
+
+    <span class="c"># --- 单轮 Agent 循环 ---</span>
+    <span class="k">def</span> chat(self, user_input: str) -> str:
+        <span class="s">"""处理一轮用户输入，返回助手回复"""</span>
+        self.messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+        <span class="k">while</span> True:
+            messages_to_send = self._trim(self.messages)
+            msg = self._call_llm_with_retry(messages_to_send)
+            self.messages.append(msg)
+
+            <span class="k">if not</span> msg.tool_calls:
+                self._save_messages()
+                <span class="k">return</span> msg.content
+
+            <span class="c"># 执行工具调用</span>
+            <span class="k">for</span> call <span class="k">in</span> msg.tool_calls:
+                result = self._execute_tool_with_retry(call)
+                tool_msg = {
+                    <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                    <span class="s">"tool_call_id"</span>: call.id,
+                    <span class="s">"content"</span>: result,
+                }
+                self.messages.append(tool_msg)
+
+    <span class="c"># --- 带重试的 LLM 调用（下面讲） ---</span>
+    <span class="k">def</span> _call_llm_with_retry(self, messages, max_retries=3):
+        <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+            <span class="k">try</span>:
+                resp = self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=self.tools,
+                )
+                <span class="k">return</span> resp.choices[0].message
+            <span class="k">except</span> Exception <span class="k">as</span> e:
+                <span class="k">if</span> attempt == max_retries - 1:
+                    <span class="k">raise</span>  <span class="c"># 最后一次还失败就抛出</span>
+                wait = 2 ** attempt  <span class="c"># 1s, 2s, 4s 指数退避</span>
+                print(<span class="s">f"[LLM 调用失败，{wait}s 后重试] {e}"</span>)
+                time.sleep(wait)
+
+    <span class="c"># --- 带容错的工具执行（下面讲） ---</span>
+    <span class="k">def</span> _execute_tool_with_retry(self, call, max_retries=2):
+        <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+            <span class="k">try</span>:
+                args = json.loads(call.function.arguments)
+                fn = self.tool_map[call.function.name]
+                result = fn(**args)
+                print(<span class="s">f"→ {call.function.name}({args}) = {result}"</span>)
+                <span class="k">return</span> str(result)
+            <span class="k">except</span> Exception <span class="k">as</span> e:
+                <span class="k">if</span> attempt == max_retries - 1:
+                    <span class="c"># 工具彻底失败，返回错误信息给 LLM，让它自己决定怎么办</span>
+                    <span class="k">return</span> <span class="s">f"工具执行失败：{e}。请换种方式或告诉用户。"</span>
+                print(<span class="s">f"[工具 {call.function.name} 失败，重试] {e}"</span>)</code></pre>
+
+<p>
+  看着长，但结构清晰：<strong>状态</strong>（<code>self.messages</code>、<code>self.tools</code> 等）都在 <code>__init__</code> 里，<strong>行为</strong>（<code>chat</code>、<code>register_tool</code>、<code>_load/_save/_trim</code>）是方法。下面是使用方：
+</p>
+
+<pre><code><span class="c"># --- 定义工具函数（和前几课一样） ---</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>, <span class="s">"广州"</span>: <span class="s">"雷阵雨，31°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">raise</span> ValueError(<span class="s">"只支持数字和 + - * /"</span>)
+    <span class="k">return</span> str(eval(expression))
+
+<span class="c"># --- 组装并运行 Agent ---</span>
+SYSTEM_PROMPT = <span class="s">"""你是一个简洁的天气助手。
+
+规则：
+- 涉及天气的问题，必须先调 get_weather 获取实时数据。
+- 涉及数值计算时，使用 calculate 工具。
+- 回答用中文，不超过两句话。"""</span>
+
+agent = WeatherAgent(
+    system_prompt=SYSTEM_PROMPT,
+    memory_file=<span class="s">"memory.json"</span>,
+    max_turns=20,
+)
+
+agent.register_tool(
+    name=<span class="s">"get_weather"</span>,
+    description=<span class="s">"查询某个城市的实时天气，返回形如 '晴，25°C' 的字符串"</span>,
+    params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]},
+    fn=get_weather,
+)
+agent.register_tool(
+    name=<span class="s">"calculate"</span>,
+    description=<span class="s">"计算数学表达式，如 '28 - 25' 或 '(25+28+31)/3'"</span>,
+    params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expression"</span>]},
+    fn=calculate,
+)
+
+<span class="c"># --- 对话循环 ---</span>
+print(<span class="s">f"天气助手已就绪（已加载 {len(agent.messages)} 条历史）"</span>)
+<span class="k">while</span> True:
+    user_input = input(<span class="s">"\n你: "</span>)
+    <span class="k">if</span> user_input.strip() <span class="k">in</span> (<span class="s">"exit"</span>, <span class="s">"quit"</span>, <span class="s">"退出"</span>):
+        <span class="k">break</span>
+    <span class="k">try</span>:
+        reply = agent.chat(user_input)
+        print(<span class="s">f"\n助手: {reply}"</span>)
+    <span class="k">except</span> Exception <span class="k">as</span> e:
+        print(<span class="s">f"\n[出错了，但历史已保存] {e}"</span>)</code></pre>
+
+<h3>为什么要封装成类？</h3>
+
+<p>对比一下：</p>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>前四课（平铺脚本）</th><th>本课（Agent 类）</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>多用户</td>
+      <td>改 <code>MEMORY_FILE</code> 要满文件找</td>
+      <td><code>agent_a = WeatherAgent(memory_file="a.json")</code>，<code>agent_b = WeatherAgent(memory_file="b.json")</code>，互不干扰</td>
+    </tr>
+    <tr>
+      <td>换模型</td>
+      <td>改 <code>model="gpt-4o-mini"</code> 这个硬编码</td>
+      <td><code>WeatherAgent(model="gpt-4o")</code>，构造时传</td>
+    </tr>
+    <tr>
+      <td>测试</td>
+      <td>难——循环和全局状态耦合</td>
+      <td>可以单独测 <code>_trim</code>、<code>register_tool</code>、<code>chat</code></td>
+    </tr>
+    <tr>
+      <td>换 LLM 厂商</td>
+      <td>大改——OpenAI 和 Claude 的 API 不同</td>
+      <td>把 <code>_call_llm_with_retry</code> 抽成接口，子类实现（下一阶段的事）</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>封装的核心收益</strong>不是「代码好看」，而是<strong>状态有了边界</strong>。前四课你只要跑一个 Agent 还行；一旦想做多用户、做测试、换模型，平铺结构就会让你改一处崩三处。类是把「这个 Agent 的所有状态和行为」收拢到一个对象里，边界清晰，外部只通过方法交互。
+  </p>
+</div>
+
+<h2>第二件事：错误处理</h2>
+
+<p>
+  生产环境和玩具的差距，很大程度在<strong>怎么对待错误</strong>。前四课代码有一个隐含假设：API 永远成功、工具永远不抛错。现实是：
+</p>
+
+<ul>
+  <li>OpenAI API 会<strong>限流</strong>（429）、会<strong>超时</strong>、会<strong>内部错误</strong>（500）</li>
+  <li>你的工具函数会抛异常（文件不存在、JSON 解析失败、网络请求挂掉）</li>
+  <li>LLM 偶尔会返回<strong>不合规的 tool_call</strong>（参数 schema 对不上、调了不存在的函数）</li>
+</ul>
+
+<p>任何一处崩了，用户聊一半的历史可能就丢了。下面是两层容错。</p>
+
+<h3>层 1：LLM 调用的指数退避重试</h3>
+
+<p>
+  API 错误大多是<strong>暂时性</strong>的——过几秒重试就好了。标准做法是<strong>指数退避</strong>：第一次失败等 1 秒，第二次等 2 秒，第三次等 4 秒，再失败才真报错。
+</p>
+
+<pre><code><span class="k">def</span> _call_llm_with_retry(self, messages, max_retries=3):
+    <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+        <span class="k">try</span>:
+            resp = self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=self.tools,
+            )
+            <span class="k">return</span> resp.choices[0].message
+        <span class="k">except</span> Exception <span class="k">as</span> e:
+            <span class="k">if</span> attempt == max_retries - 1:
+                <span class="k">raise</span>  <span class="c"># 最后一次还失败 → 让上层处理</span>
+            wait = 2 ** attempt  <span class="c"># 1, 2, 4 秒</span>
+            print(<span class="s">f"[LLM 失败，{wait}s 后重试] {e}"</span>)
+            time.sleep(wait)</code></pre>
+
+<p>
+  注意最后一行 <code>raise</code>——三次都失败就抛出去，由调用方决定怎么办（在 <code>chat</code> 里没接，就冒到对话循环的 <code>try</code> 里，打印错误、历史已保存、用户还能继续聊）。
+</p>
+
+<h3>层 2：工具执行的容错</h3>
+
+<p>
+  工具失败更常见，而且<strong>不应该让 Agent 崩</strong>。正确做法是：把错误信息作为 tool 消息的内容喂回给 LLM，让它自己决定怎么办——换种参数重试、换个工具、或者直接告诉用户「这个我做不了」。
+</p>
+
+<pre><code><span class="k">def</span> _execute_tool_with_retry(self, call, max_retries=2):
+    <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+        <span class="k">try</span>:
+            args = json.loads(call.function.arguments)
+            fn = self.tool_map[call.function.name]
+            result = fn(**args)
+            <span class="k">return</span> str(result)
+        <span class="k">except</span> Exception <span class="k">as</span> e:
+            <span class="k">if</span> attempt == max_retries - 1:
+                <span class="c"># 关键：不 raise，返回错误信息给 LLM</span>
+                <span class="k">return</span> <span class="s">f"工具执行失败：{e}。请换种方式或告诉用户。"</span>
+            print(<span class="s">f"[工具 {call.function.name} 失败，重试] {e}"</span>)</code></pre>
+
+<blockquote>
+  <p>
+    <strong>这条原则很重要</strong>：工具失败时，<strong>不要</strong>让程序崩，<strong>也不要</strong>默默吞掉——把错误信息作为 tool 消息返回给 LLM。LLM 看到「工具执行失败：城市名不能为空」后，常常会自己修正参数重试。这就是 Agent 的<strong>自我修复能力</strong>，也是 Agent 2.0 比 1.0 更鲁棒的关键之一。
+  </p>
+</blockquote>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把代码跑通，确认功能上和第 4 课一致——能查天气、能算数、能跨会话记忆。
+  </li>
+  <li>
+    <strong>故意制造错误</strong>：临时把 <code>get_weather</code> 改成 <code>raise Exception("模拟 API 挂了")</code>，再问「北京天气」。观察 Agent 的反应——你应该看到它说「工具执行失败，我无法查询实时天气」，而不是整个程序崩掉。
+  </li>
+  <li>
+    <strong>测重试</strong>：在 <code>_call_llm_with_retry</code> 第一次调用前加 <code>raise Exception("模拟超时")</code>，让它前两次必失败、第三次成功。看日志里会不会打印「[LLM 失败，1s 后重试]」然后继续跑。
+  </li>
+  <li>
+    <strong>多用户</strong>：再实例化一个 <code>agent_b = WeatherAgent(memory_file="b.json")</code>，给 a 说「我在北京」，给 b 说「我在上海」。退出重开，确认 a 和 b 各自记得各自的城市——这就是封装成类带来的直接好处。
+  </li>
+</ol>
+
+<h2>一个常见的进阶问题：LLM 调了不存在的工具怎么办？</h2>
+
+<p>
+  偶尔 LLM 会返回一个 <code>call.function.name = "get_temperature"</code>（它记错了名字），而你的 <code>tool_map</code> 里只有 <code>get_weather</code>。此时 <code>self.tool_map[call.function.name]</code> 会抛 <code>KeyError</code>。
+</p>
+
+<p>这个错误被层 2 的 <code>except</code> 接住后，返回给 LLM 的信息是「工具执行失败：'get_temperature'。请换种方式」。但更好的做法是<strong>给 LLM 一个更明确的提示</strong>：</p>
+
+<pre><code><span class="k">def</span> _execute_tool_with_retry(self, call, max_retries=2):
+    <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+        <span class="k">try</span>:
+            args = json.loads(call.function.arguments)
+            <span class="k">if</span> call.function.name <span class="k">not in</span> self.tool_map:
+                available = list(self.tool_map.keys())
+                <span class="k">return</span> <span class="s">f"没有叫 '{call.function.name}' 的工具。可用的有：{available}"</span>
+            fn = self.tool_map[call.function.name]
+            <span class="k">return</span> str(fn(**args))
+        <span class="k">except</span> Exception <span class="k">as</span> e:
+            <span class="k">if</span> attempt == max_retries - 1:
+                <span class="k">return</span> <span class="s">f"工具执行失败：{e}"</span>
+            print(<span class="s">f"[工具失败，重试] {e}"</span>)</code></pre>
+
+<p>
+  这样 LLM 看到「没有叫 X 的工具，可用的是 [A, B]」后，通常下一轮就会改调对的工具。这是用错误信息<strong>引导 LLM 自我修正</strong>的典型模式。
+</p>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">工具函数 <code>get_weather</code> 抛了 <code>KeyError</code>（城市名不存在）。最合理的处理是？</p>
+  <ul class="quiz-options">
+    <li>让程序崩掉，让用户重启</li>
+    <li>默默吞掉错误，给 LLM 返回空字符串</li>
+    <li>把错误信息作为 tool 消息返回给 LLM，让它知道发生了什么、自己决定下一步</li>
+    <li>自动把城市名改成"北京"再重试</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">OpenAI API 偶尔会返回 429（请求太频繁）。你的 Agent 应该怎么应对？</p>
+  <ul class="quiz-options">
+    <li>立即重试，越快越好</li>
+    <li>用指数退避：等 1s → 重试；再失败等 2s → 重试；再失败等 4s → 重试；还失败才报错给上层</li>
+    <li>直接放弃这一轮，告诉用户「服务不可用」</li>
+    <li>换一个 LLM 厂商</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  OpenAI 官方文档里有一节专门讲错误处理和重试策略，包括 429/5xx 的区分和退避算法：
+</p>
+
+<p>
+  <strong>👉 <a href="https://platform.openai.com/docs/guides/rate-limits" target="_blank">Rate Limits & Error Handling — OpenAI</a></strong>
+</p>
+
+<p>
+  Anthropic 的 Python SDK 内置了自动重试，可以对比看看成熟库是怎么处理暂时性错误的：<a href="https://docs.anthropic.com/en/api/rate-limits" target="_blank">Anthropic Rate Limits</a>。后面我们切换到 Claude 时会用到。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你的 Agent 已经是一个像样的小工程了：封装良好、有错误处理、能多用户、能持久化记忆。下一课是个真正的里程碑——<strong>把它变成一个 Web 服务</strong>（用 FastAPI 包一层 HTTP 接口），让别人也能通过网络调用你的 Agent。这是从「自己跑」到「给别人用」的关键一步，也是创业产品的最小交付形态。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>类的设计不合直觉？某段错误处理没看懂？想加个新工具但不知道怎么注册？把场景告诉我，我帮你写代码或画结构。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0004-long-term-memory.html">第 4 课：长期记忆</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'c': '正确。这是 Agent 鲁棒性的核心设计：工具失败不崩、不吞，把错误信息回传给 LLM。LLM 看到错误后能自己修正参数、换工具，或诚实告诉用户做不到。这种「让 LLM 知道发生了什么」的设计，比任何复杂的异常处理逻辑都更有效。',
+      'b': '正确。指数退避是处理暂时性错误的标准做法。立即重试会加剧限流，直接放弃太脆弱，换厂商是过度反应。退避的关键是「等待时间指数增长」——给服务端喘息的时间，同时不让自己等太久。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

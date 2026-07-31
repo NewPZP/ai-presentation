@@ -1,0 +1,420 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 8 课 · 流式输出</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 8 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">流式输出</h1>
+  <p class="lesson-meta">让回复一字一字出现，像 ChatGPT 那样 · 约 14 分钟</p>
+</header>
+
+<main>
+
+<h2>为什么要做流式输出？</h2>
+
+<p>
+  你用 ChatGPT 时有没有注意过--它的回答不是一次性蹦出来的，而是一字一字、一句一句冒出来的。这不是花架子，是一个<strong>对产品体验影响巨大</strong>的工程细节。
+</p>
+
+<p>对比两种体验：</p>
+
+<table>
+  <thead>
+    <tr><th>非流式（前 7 课的做法）</th><th>流式</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>用户发问 → 等 3-15 秒 → 一次性看到完整回答</td>
+      <td>用户发问 → 0.5 秒内开始看到字 → 边生成边显示</td>
+    </tr>
+    <tr>
+      <td>等待期间界面卡住，用户怀疑是不是坏了</td>
+      <td>立即有反馈，用户知道「在动」</td>
+    </tr>
+    <tr>
+      <td>长回答时尤其痛苦（10 秒+）</td>
+      <td>用户可以边看边思考，提前决定要不要打断</td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    交互设计有条老原则：<strong>100ms 内有反馈，用户觉得「即时」；1 秒内有反馈，觉得「流畅」；10 秒没反馈，觉得「坏了」</strong>。LLM 生成慢（几秒到几十秒），非流式必然撞 10 秒墙。流式是唯一的解。
+  </p>
+</blockquote>
+
+<h2>流式的本质：Server-Sent Events</h2>
+
+<p>
+  HTTP 通常是「请求 → 等响应 → 一次性返回」--客户端发请求，等服务端把整个回答准备好，再一次性收回来。这对 LLM 不合适，因为 LLM 是<strong>逐 token 生成</strong>的，每生成一个字就可以发给用户，没必要等整句生成完。
+</p>
+
+<p>流式的做法是 <strong>Server-Sent Events（SSE）</strong>：</p>
+
+<ol>
+  <li>客户端发一个普通 POST 请求</li>
+  <li>服务端不一次性返回，而是<strong>保持连接打开</strong>，有新内容就推一段</li>
+  <li>客户端边收边显示，直到服务端关闭连接</li>
+</ol>
+
+<p>
+  浏览器原生支持 SSE（<code>EventSource</code> 或 <code>fetch</code> + <code>ReadableStream</code>），FastAPI 也原生支持--不用装额外依赖。
+</p>
+
+<h2>第一件事：LLM 调用改成流式</h2>
+
+<p>
+  OpenAI SDK 支持流式--加个 <code>stream=True</code>，返回的就不是完整 response，而是一个<strong>迭代器</strong>，每个 chunk 包含一小段（通常 1-3 个字）。
+</p>
+
+<pre><code><span class="c"># 非流式（前 7 课）</span>
+resp = client.chat.completions.create(model=..., messages=..., tools=...)
+msg = resp.choices[0].message  <span class="c"># 一次性拿到完整消息</span>
+
+<span class="c"># 流式</span>
+stream = client.chat.completions.create(model=..., messages=..., tools=..., <span class="k">stream=True</span>)
+<span class="k">for</span> chunk <span class="k">in</span> stream:
+    delta = chunk.choices[0].delta  <span class="c"># 每个 chunk 的增量</span>
+    <span class="k">if</span> delta.content:
+        print(delta.content, end=<span class="s">""</span>, flush=True)  <span class="c"># 边收边打印</span></code></pre>
+
+<p>
+  注意 <code>delta</code> 这个词--它代表「这次新增的内容」，不是完整内容。第一个 chunk 可能是「北」，第二个是「京」，第三个是「今天」……拼起来才是完整回答。
+</p>
+
+<h2>第二件事：Agent 循环的流式改造</h2>
+
+<p>
+  这里有个棘手的地方：<strong>Agent 是循环的</strong>。一轮对话里可能要先调工具、再生成回答。流式时要分清两种情况：
+</p>
+
+<ol>
+  <li><strong>LLM 要调工具</strong> → tool_call 不是流式的（要拿到完整参数才能执行），这部分悄悄做，不给用户看</li>
+  <li><strong>LLM 在生成最终回答</strong> → 这部分流式给用户看</li>
+</ol>
+
+<p>改造后的 <code>chat_stream</code> 方法：</p>
+
+<pre><code><span class="k">def</span> chat_stream(self, user_input: str):
+    <span class="s">"""流式版 chat：yield 出每个 token，调用方边收边显示"""</span>
+    self.messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="k">while</span> True:
+        messages_to_send = self._trim(self.messages)
+
+        <span class="c"># 流式调用 LLM</span>
+        stream = self.client.chat.completions.create(
+            model=self.model,
+            messages=messages_to_send,
+            tools=self.tools,
+            stream=True,
+        )
+
+        <span class="c"># 累积本次 LLM 的完整回复（要存进 messages）</span>
+        content_parts = []
+        tool_calls_parts = []  <span class="c"># tool_call 是分 chunk 来的，要拼</span>
+
+        <span class="k">for</span> chunk <span class="k">in</span> stream:
+            delta = chunk.choices[0].delta
+
+            <span class="c"># 1. 文本内容 -> 流式 yield 给用户</span>
+            <span class="k">if</span> delta.content:
+                content_parts.append(delta.content)
+                <span class="k">yield</span> {<span class="s">"type"</span>: <span class="s">"token"</span>, <span class="s">"content"</span>: delta.content}
+
+            <span class="c"># 2. tool_call -> 累积起来，不 yield（用户不需要看）</span>
+            <span class="k">if</span> delta.tool_calls:
+                <span class="k">for</span> tc <span class="k">in</span> delta.tool_calls:
+                    idx = tc.index
+                    <span class="k">while</span> len(tool_calls_parts) &lt;= idx:
+                        tool_calls_parts.append({<span class="s">"id"</span>: <span class="s">""</span>, <span class="s">"name"</span>: <span class="s">""</span>, <span class="s">"args"</span>: <span class="s">""</span>})
+                    <span class="k">if</span> tc.id:
+                        tool_calls_parts[idx][<span class="s">"id"</span>] = tc.id
+                    <span class="k">if</span> tc.function:
+                        <span class="k">if</span> tc.function.name:
+                            tool_calls_parts[idx][<span class="s">"name"</span>] += tc.function.name
+                        <span class="k">if</span> tc.function.arguments:
+                            tool_calls_parts[idx][<span class="s">"args"</span>] += tc.function.arguments
+
+        <span class="c"># 把这次 LLM 回复存进 messages</span>
+        msg = {<span class="s">"role"</span>: <span class="s">"assistant"</span>, <span class="s">"content"</span>: <span class="s">""</span>.join(content_parts) <span class="k">or</span> None}
+        <span class="k">if</span> tool_calls_parts:
+            msg[<span class="s">"tool_calls"</span>] = [{
+                <span class="s">"id"</span>: tc[<span class="s">"id"</span>],
+                <span class="s">"type"</span>: <span class="s">"function"</span>,
+                <span class="s">"function"</span>: {<span class="s">"name"</span>: tc[<span class="s">"name"</span>], <span class="s">"arguments"</span>: tc[<span class="s">"args"</span>]}
+            } <span class="k">for</span> tc <span class="k">in</span> tool_calls_parts]
+        self.messages.append(msg)
+
+        <span class="c"># 没工具调用 -> 这次是最终回答，结束</span>
+        <span class="k">if not</span> tool_calls_parts:
+            self._save_messages()
+            <span class="k">yield</span> {<span class="s">"type"</span>: <span class="s">"done"</span>}
+            <span class="k">return</span>
+
+        <span class="c"># 有工具调用 -> 执行，把结果喂回去，继续循环</span>
+        <span class="k">for</span> tc <span class="k">in</span> tool_calls_parts:
+            <span class="k">yield</span> {<span class="s">"type"</span>: <span class="s">"tool_start"</span>, <span class="s">"name"</span>: tc[<span class="s">"name"</span>]}
+            args = json.loads(tc[<span class="s">"args"</span>]) <span class="k">if</span> tc[<span class="s">"args"</span>] <span class="k">else</span> {}
+            result = self._execute_tool_with_retry_tc(tc)
+            self.messages.append({
+                <span class="s">"role"</span>: <span class="s">"tool"</span>,
+                <span class="s">"tool_call_id"</span>: tc[<span class="s">"id"</span>],
+                <span class="s">"content"</span>: result,
+            })
+            <span class="k">yield</span> {<span class="s">"type"</span>: <span class="s">"tool_end"</span>, <span class="s">"name"</span>: tc[<span class="s">"name"</span>], <span class="s">"result"</span>: result}
+
+<span class="k">def</span> _execute_tool_with_retry_tc(self, tc, max_retries=2):
+    <span class="s">"""tool_call 字典版的工具执行（和第 5 课逻辑一致）"""</span>
+    <span class="k">for</span> attempt <span class="k">in</span> range(max_retries):
+        <span class="k">try</span>:
+            args = json.loads(tc[<span class="s">"args"</span>]) <span class="k">if</span> tc[<span class="s">"args"</span>] <span class="k">else</span> {}
+            <span class="k">if</span> tc[<span class="s">"name"</span>] <span class="k">not in</span> self.tool_map:
+                <span class="k">return</span> <span class="s">f"没有叫 '{tc['name']}' 的工具"</span>
+            <span class="k">return</span> str(self.tool_map[tc[<span class="s">"name"</span>]](**args))
+        <span class="k">except</span> Exception <span class="k">as</span> e:
+            <span class="k">if</span> attempt == max_retries - 1:
+                <span class="k">return</span> <span class="s">f"工具执行失败：{e}"</span></code></pre>
+
+<div class="callout">
+  <p>
+    <strong>看 <code>yield</code> 这个关键字</strong>--它把方法变成了「生成器」。调用方 <code>for event in agent.chat_stream(msg):</code> 时，每 yield 一次就收到一个事件。这就是流式的本质：<strong>把一个长任务拆成无数小事件，生产一个发一个，消费一个收一个</strong>。
+  </p>
+</div>
+
+<h2>第三件事：FastAPI 端点改成 SSE</h2>
+
+<p>FastAPI 用 <code>StreamingResponse</code> 把生成器包成 SSE 流：</p>
+
+<pre><code><span class="c"># server.py 新增流式端点</span>
+<span class="k">from</span> fastapi.responses <span class="k">import</span> StreamingResponse
+<span class="k">import</span> json
+
+<span class="k">@app.post</span>(<span class="s">"/chat/stream"</span>)
+<span class="k">async def</span> chat_stream(req: ChatRequest):
+    agent = get_or_create_agent(req.user_id)
+
+    <span class="k">def</span> event_stream():
+        <span class="s">"""把 Agent 的事件转成 SSE 格式"""</span>
+        <span class="k">for</span> event <span class="k">in</span> agent.chat_stream(req.message):
+            <span class="c"># SSE 格式：每个事件以 "data: " 开头，两个换行结尾</span>
+            <span class="k">yield</span> <span class="s">f"data: {json.dumps(event, ensure_ascii=False)}\n\n"</span>
+
+    <span class="k">return</span> StreamingResponse(
+        event_stream(),
+        media_type=<span class="s">"text/event-stream"</span>,
+        headers={
+            <span class="s">"Cache-Control"</span>: <span class="s">"no-cache"</span>,
+            <span class="s">"X-Accel-Buffering"</span>: <span class="s">"no"</span>,  <span class="c"># 关闭 nginx 缓冲，否则流被攒着</span>
+        }
+    )</code></pre>
+
+<p>
+  每个事件是 JSON 序列化后塞进 <code>data: ...\n\n</code> 的 SSE 帧里。客户端用 <code>fetch</code> + <code>ReadableStream</code> 解析。
+</p>
+
+<h2>前端怎么接收</h2>
+
+<p>
+  浏览器的 <code>EventSource</code> 只支持 GET，POST 得用 <code>fetch</code>。下面是个最小可用的流式前端：</p>
+
+<pre><code>&lt;input id=<span class="s">"msg"</span> placeholder=<span class="s">"说点什么..."</span>&gt;
+&lt;button onclick=<span class="s">"send()"</span>&gt;发送&lt;/button&gt;
+&lt;div id=<span class="s">"log"</span>&gt;&lt;/div&gt;
+
+&lt;script&gt;
+<span class="k">async</span> <span class="k">function</span> send() {
+  <span class="k">const</span> msg = document.getElementById(<span class="s">'msg'</span>).value;
+  document.getElementById(<span class="s">'log'</span>).innerHTML += <span class="s">`&lt;p&gt;&lt;b&gt;你:&lt;/b&gt; ${msg}&lt;/p&gt;&lt;p id="cur"&gt;&lt;b&gt;助手:&lt;/b&gt; &lt;span id="typing"&gt;&lt;/span&gt;&lt;/p&gt;`</span>;
+
+  <span class="k">const</span> r = <span class="k">await</span> fetch(<span class="s">'/chat/stream'</span>, {
+    method: <span class="s">'POST'</span>,
+    headers: {<span class="s">'Content-Type'</span>: <span class="s">'application/json'</span>},
+    body: JSON.stringify({user_id: <span class="s">'web'</span>, message: msg})
+  });
+
+  <span class="k">const</span> reader = r.body.getReader();
+  <span class="k">const</span> decoder = <span class="k">new</span> TextDecoder();
+  <span class="k">let</span> buffer = <span class="s">''</span>;
+  <span class="k">const</span> typing = document.getElementById(<span class="s">'typing'</span>);
+
+  <span class="k">while</span> (<span class="k">true</span>) {
+    <span class="k">const</span> {done, value} = <span class="k">await</span> reader.read();
+    <span class="k">if</span> (done) <span class="k">break</span>;
+    buffer += decoder.decode(value, {stream: <span class="k">true</span>});
+
+    <span class="c">// SSE 帧以 \n\n 分隔</span>
+    <span class="k">const</span> events = buffer.split(<span class="s">'\n\n'</span>);
+    buffer = events.pop();  <span class="c">// 最后一段可能不完整，留着</span>
+
+    <span class="k">for</span> (<span class="k">const</span> e <span class="k">of</span> events) {
+      <span class="k">if</span> (!e.startsWith(<span class="s">'data: '</span>)) <span class="k">continue</span>;
+      <span class="k">const</span> data = JSON.parse(e.slice(6));
+
+      <span class="k">if</span> (data.type === <span class="s">'token'</span>) {
+        typing.textContent += data.content;  <span class="c">// 一字一字追加</span>
+      } <span class="k">else if</span> (data.type === <span class="s">'tool_start'</span>) {
+        typing.innerHTML += <span class="s">`&lt;i&gt;[调用 ${data.name}]&lt;/i&gt;`</span>;
+      } <span class="k">else if</span> (data.type === <span class="s">'tool_end'</span>) {
+        typing.innerHTML += <span class="s">`&lt;i&gt;[完成]&lt;/i&gt;`</span>;
+      } <span class="k">else if</span> (data.type === <span class="s">'done'</span>) {
+        typing.innerHTML += <span class="s">' ✓'</span>;
+      }
+    }
+  }
+}
+&lt;/script&gt;</code></pre>
+
+<p>
+  跑起来，你会看到回答<strong>真的</strong>一字一字冒出来--和 ChatGPT 一样的体验。这个细节会让你的产品质感上一个台阶。
+</p>
+
+<h2>关键设计点</h2>
+
+<h3>1. 为什么用生成器（yield）而不是回调？</h3>
+
+<p>
+  Python 的生成器是流式的天然表达方式。调用方 <code>for event in agent.chat_stream(...)</code> 写起来和普通循环一样，但内部是流式的。<strong>同步代码的简洁 + 流式的实时性</strong>。回调写法（传一个 <code>on_token</code> 函数进来）也可以，但嵌套深、错误处理麻烦。
+</p>
+
+<h3>2. tool_call 的流式拼接</h3>
+
+<p>
+  这是最容易踩坑的地方。非流式时 <code>tool_calls</code> 是一个完整的列表，直接用就行。流式时它是<strong>分 chunk 来的</strong>--第一个 chunk 给 id 和函数名，后面的 chunk 给 arguments 的一段。你必须自己拼起来，否则 <code>json.loads</code> 会失败。
+</p>
+
+<p>代码里这段是关键：</p>
+
+<pre><code><span class="k">if</span> delta.tool_calls:
+    <span class="k">for</span> tc <span class="k">in</span> delta.tool_calls:
+        idx = tc.index  <span class="c"># 用 index 对齐同一个 tool_call 的不同 chunk</span>
+        <span class="c"># ...累加 arguments 字符串...</span></code></pre>
+
+<h3>3. 事件类型设计</h3>
+
+<p>注意我们 yield 的事件有 4 种 type：</p>
+
+<ul>
+  <li><code>token</code> - 文本内容，前端追加显示</li>
+  <li><code>tool_start</code> - 工具开始执行，前端可以显示「正在查询…」</li>
+  <li><code>tool_end</code> - 工具结束，前端可以显示结果或隐藏 loading</li>
+  <li><code>done</code> - 整轮对话结束</li>
+</ul>
+
+<p>
+  这种结构化事件比纯文本流更强大--前端可以根据类型做不同 UI 反馈。比如 <code>tool_start</code> 时显示一个 spinner，<code>token</code> 时追加文字。这是 Agent 流式和普通 ChatGPT 流式的区别：<strong>Agent 有工具调用，需要额外的事件类型</strong>。
+</p>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把流式端点跑通，在前端体验「一字一字冒出来」的感觉。故意问一个需要调工具的问题（「北京天气」），看前端能不能显示「[调用 get_weather]」然后接着流式回答。
+  </li>
+  <li>
+    <strong>对比体验</strong>：同时保留 <code>/chat</code>（非流式）和 <code>/chat/stream</code>（流式）两个端点，前端各做一份。问同一个长问题（「详细解释下天气对穿衣的影响」），对比等待体验。你会直观感受到流式的价值。
+  </li>
+  <li>
+    <strong>断线处理</strong>：故意在流式过程中关掉服务，看前端会卡在哪。生产环境需要前端检测连接断开并提示用户「连接中断，请重试」--这是流式的代价：复杂度上升。
+  </li>
+  <li>
+    （进阶）<strong>取消功能</strong>：加一个「停止」按钮，用 <code>AbortController</code> 中断 fetch。后端会收到连接断开，Agent 循环可以检测到并停止。这是 ChatGPT 都有的功能，但实现要前后端配合。
+  </li>
+</ol>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">流式输出对 Agent 体验的核心价值是？</p>
+  <ul class="quiz-options">
+    <li>让回答更快生成完</li>
+    <li>省 token，降低成本</li>
+    <li>用户在 100ms-1s 内看到第一个字，避免「等 10 秒以为坏了」的体验，让长回答可边看边读</li>
+    <li>让 Agent 更聪明</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">用户问「北京天气」，Agent 流式过程中前端先收到 <code>tool_start</code>，然后收到 <code>tool_end</code>，然后开始收到 <code>token</code>。这说明？</p>
+  <ul class="quiz-options">
+    <li>Agent 出错了，工具调用失败</li>
+    <li>Agent 先调了 get_weather 工具（用户看到「正在查询」），拿到结果后开始流式生成最终回答（「北京今天晴…」）。这是 Agent 流式的正常流程</li>
+    <li>工具调用顺序反了，应该先 token 再 tool</li>
+    <li>LLM 在边调工具边说话</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  OpenAI 官方文档对 streaming 讲得最清楚，包括 chunk 结构、tool_call 拼接、错误处理：
+</p>
+
+<p>
+  <strong>👉 <a href="https://platform.openai.com/docs/api-reference/streaming" target="_blank">Streaming API - OpenAI</a></strong>
+</p>
+
+<p>
+  FastAPI 的 StreamingResponse 官方示例，包含 SSE 和其他流式场景：<a href="https://fastapi.tiangolo.com/advanced/custom-response/#streamingresponse" target="_blank">FastAPI StreamingResponse</a>
+</p>
+
+<p>
+  MDN 的 SSE 文档是前端实现的权威参考：<a href="https://developer.mozilla.org/zh-CN/docs/Web/API/Server-sent_events" target="_blank">Server-sent events - MDN</a>
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你的 Agent 已经在体验上接近 ChatGPT 了--能流式回答、能显示工具调用进度。下一课进入<strong>生产化部署</strong>专题：用 Redis 替代内存 dict 存多用户记忆、加 API Key 认证、用 Docker 打包、部署到云服务器。这是从「本地能跑」到「真上线给人用」的最后一公里。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>tool_call 拼不上、JSON 解析报错？前端 fetch 收不到流、数据卡着一次性蹦出来？把现象和代码贴给我，常见原因就那几个（nginx 缓冲、Content-Type 不对、buffer 没切开）。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0007-agent-evals.html">第 7 课：Agent 评测</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'c': '正确。流式不会让生成更快（总耗时一样），也不省 token。它的价值是「首字延迟」从几秒降到几百毫秒，让用户立即有反馈。这是交互设计里被反复验证的原则：延迟反馈 = 体验差。',
+      'b': '正确。这是 Agent 流式和普通聊天流式的核心区别：Agent 会先调工具（tool_start/tool_end 事件），再流式生成最终回答（token 事件）。前端可以根据这些事件类型做不同的 UI 反馈--工具执行时显示 loading，token 到来时开始追加文字。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

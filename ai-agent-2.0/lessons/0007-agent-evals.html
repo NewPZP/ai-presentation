@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 7 课 · Agent 评测</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 7 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">Agent 评测</h1>
+  <p class="lesson-meta">从「我觉得它能用」到「我有数据证明它好用」· 约 16 分钟</p>
+</header>
+
+<main>
+
+<h2>为什么这一课很重要</h2>
+
+<p>
+  前 6 课你做出了一个能跑的 Agent。但当你拿给别人用、或者想把它做成产品时，会遇到一连串回答不了的问题：
+</p>
+
+<ul>
+  <li>「换了个系统提示，Agent 是变好了还是变差了？」</li>
+  <li>「gpt-4o-mini 够用，还是该上 gpt-4o？多花 10 倍钱值得吗？」</li>
+  <li>「用户反馈 Agent 答错了，是哪一步错的？工具选错？参数错？还是最终回答错？」</li>
+  <li>「我加了第 3 个工具，会不会让前两个工具的选择准确率下降？」</li>
+</ul>
+
+<p>
+  这些问题靠「跑几次凭感觉」答不了。<strong>评测（evals）</strong>就是给你一套结构化的方法，用数据回答这些问题。这是 Agent 工程和「调 prompt 玄学」的分水岭。
+</p>
+
+<blockquote>
+  <p>
+    一句话：评测就是<strong>给 Agent 一组固定输入，用预先定义的标准给输出打分</strong>。和你小时候做的标准化考试是一回事--题目一样、评分规则一样、可以横向比较。
+  </p>
+</blockquote>
+
+<h2>评测什么？先分清三层</h2>
+
+<p>Agent 的输出分三层，每层评测方式不同：</p>
+
+<table>
+  <thead>
+    <tr><th>层</th><th>评什么</th><th>怎么评</th><th>本课对应</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>工具选择</strong></td>
+      <td>LLM 选对工具了吗？参数对吗？</td>
+      <td>精确匹配（有标准答案）</td>
+      <td>简单、必做</td>
+    </tr>
+    <tr>
+      <td><strong>最终回答</strong></td>
+      <td>给用户的回复正确吗？完整吗？</td>
+      <td>LLM 当裁判（无标准答案时）</td>
+      <td>主流做法</td>
+    </tr>
+    <tr>
+      <td><strong>过程质量</strong></td>
+      <td>路径合理吗？有没有多余调用？</td>
+      <td>启发式 + 人工抽检</td>
+      <td>进阶，先了解</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>本课重点做前两层--它们覆盖了 80% 的实际需求。</p>
+
+<h2>第一层：工具选择评测（精确匹配）</h2>
+
+<p>
+  这一层最好做--因为<strong>有标准答案</strong>。你准备一组输入，预先标注「期望调用的工具名和参数」，然后跑 Agent，看实际调用和期望是否一致。
+</p>
+
+<pre><code><span class="c"># evals_tool.py</span>
+<span class="k">from</span> agent <span class="k">import</span> WeatherAgent, SYSTEM_PROMPT, get_weather, calculate
+<span class="k">import</span> json
+
+<span class="c"># --- 测试用例：每个用例 = (输入, 期望的工具调用列表) ---</span>
+TEST_CASES = [
+    {
+        <span class="s">"input"</span>: <span class="s">"北京今天天气怎么样？"</span>,
+        <span class="s">"expected_tools"</span>: [{<span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"city"</span>: <span class="s">"北京"</span>}],
+    },
+    {
+        <span class="s">"input"</span>: <span class="s">"北京和上海温差多少？"</span>,
+        <span class="s">"expected_tools"</span>: [
+            {<span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"city"</span>: <span class="s">"北京"</span>},
+            {<span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"city"</span>: <span class="s">"上海"</span>},
+            <span class="s"># 是否调 calculate 由 LLM 决定，这里不强校验</span>
+        ],
+    },
+    {
+        <span class="s">"input"</span>: <span class="s">"今天星期几？"</span>,  <span class="c"># 和天气无关</span>
+        <span class="s">"expected_tools"</span>: [],  <span class="c"># 期望不调任何工具</span>
+    },
+    {
+        <class="s">"input"</span>: <span class="s">"计算 123 乘以 456"</span>,
+        <span class="s">"expected_tools"</span>: [{<span class="s">"name"</span>: <span class="s">"calculate"</span>, <span class="s">"expression"</span>: <span class="s">"123*456"</span>}],
+    },
+]
+
+<span class="c"># --- 改造 Agent，让它把工具调用轨迹暴露出来 ---</span>
+<span class="k">def</span> run_agent_and_get_trace(input_text: str) -> list[dict]:
+    <span class="s">"""跑一遍 Agent，返回这一轮的工具调用轨迹"""</span>
+    agent = WeatherAgent(system_prompt=SYSTEM_PROMPT, memory_file=<span class="s">"eval_tmp.json"</span>)
+    agent.register_tool(
+        name=<span class="s">"get_weather"</span>, description=<span class="s">"查询某个城市的实时天气"</span>,
+        params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]},
+        fn=get_weather,
+    )
+    agent.register_tool(
+        name=<span class="s">"calculate"</span>, description=<span class="s">"计算数学表达式"</span>,
+        params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expression"</span>]},
+        fn=calculate,
+    )
+
+    before = len(agent.messages)
+    agent.chat(input_text)
+    new_msgs = agent.messages[before:]
+
+    trace = []
+    <span class="k">for</span> m <span class="k">in</span> new_msgs:
+        <span class="k">if</span> m.get(<span class="s">"role"</span>) == <span class="s">"assistant"</span> <span class="k">and</span> m.get(<span class="s">"tool_calls"</span>):
+            <span class="k">for</span> call <span class="k">in</span> m[<span class="s">"tool_calls"</span>]:
+                trace.append({
+                    <span class="s">"name"</span>: call[<span class="s">"function"</span>][<span class="s">"name"</span>],
+                    <span class="s">"args"</span>: json.loads(call[<span class="s">"function"</span>][<span class="s">"arguments"</span>]),
+                })
+    <span class="k">return</span> trace
+
+<span class="c"># --- 评分函数 ---</span>
+<span class="k">def</span> score_tool_selection(expected: list[dict], actual: list[dict]) -> dict:
+    <span class="s">"""对比期望和实际的工具调用，返回得分和细节"""</span>
+    expected_names = [t[<span class="s">"name"</span>] <span class="k">for</span> t <span class="k">in</span> expected]
+    actual_names = [t[<span class="s">"name"</span>] <span class="k">for</span> t <span class="k">in</span> actual]
+
+    <span class="c"># 简化评分：工具名集合是否一致（不要求顺序，因为 LLM 调用顺序可能变）</span>
+    names_match = set(expected_names) == set(actual_names)
+
+    <span class="c"># 参数是否匹配（只检查期望里明确指定的字段）</span>
+    args_match = True
+    <span class="k">for</span> exp <span class="k">in</span> expected:
+        <span class="k">for</span> act <span class="k">in</span> actual:
+            <span class="k">if</span> act[<span class="s">"name"</span>] == exp[<span class="s">"name"</span>]:
+                <span class="k">for</span> k, v <span class="k">in</span> exp[<span class="s">"args"</span>].items():
+                    <span class="k">if</span> k <span class="k">in</span> act[<span class="s">"args"</span>] <span class="k">and</span> act[<span class="s">"args"</span>][k] != v:
+                        args_match = False
+
+    <span class="k">return</span> {
+        <span class="s">"pass"</span>: names_match <span class="k">and</span> args_match,
+        <span class="s">"names_match"</span>: names_match,
+        <span class="s">"args_match"</span>: args_match,
+        <span class="s">"expected"</span>: expected,
+        <span class="s">"actual"</span>: actual,
+    }
+
+<span class="c"># --- 跑评测 ---</span>
+<span class="k">def</span> run_evals():
+    results = []
+    <span class="k">for</span> tc <span class="k">in</span> TEST_CASES:
+        trace = run_agent_and_get_trace(tc[<span class="s">"input"</span>])
+        score = score_tool_selection(tc[<span class="s">"expected_tools"</span>], trace)
+        results.append({
+            <span class="s">"input"</span>: tc[<span class="s">"input"</span>],
+            <span class="s">"pass"</span>: score[<span class="s">"pass"</span>],
+            <span class="s">"detail"</span>: score,
+        })
+
+    <span class="c"># 汇总</span>
+    passed = sum(1 <span class="k">for</span> r <span class="k">in</span> results <span class="k">if</span> r[<span class="s">"pass"</span>])
+    total = len(results)
+    print(<span class="s">f"\n工具选择准确率：{passed}/{total} = {passed/total*100:.0f}%\n"</span>)
+    <span class="k">for</span> r <span class="k">in</span> results:
+        status = <span class="s">"✓"</span> <span class="k">if</span> r[<span class="s">"pass"</span>] <span class="k">else</span> <span class="s">"✗"</span>
+        print(<span class="s">f"{status} {r['input']}"</span>)
+        <span class="k">if not</span> r[<span class="s">"pass"</span>]:
+            print(<span class="s">f"    期望: {r['detail']['expected']}"</span>)
+            print(<span class="s">f"    实际: {r['detail']['actual']}"</span>)
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    run_evals()</code></pre>
+
+<p>跑一下：</p>
+
+<pre><code>$ python evals_tool.py
+
+工具选择准确率：3/4 = 75%
+
+✓ 北京今天天气怎么样？
+✓ 北京和上海温差多少？
+✗ 今天星期几？
+    期望: []
+    实际: [{'name': 'get_weather', 'args': {}}]  <span class="c"># LLM 多调了一次工具</span>
+✓ 计算 123 乘以 456</code></pre>
+
+<p>
+  看--你立刻发现了一个问题：问「今天星期几」时，LLM 错误地调了 <code>get_weather</code>。这不是凭感觉能发现的，是评测帮你抓出来的。
+</p>
+
+<h2>第二层：最终回答评测（LLM 当裁判）</h2>
+
+<p>
+  工具选择有标准答案，但<strong>最终回答没有</strong>。「北京今天晴，25°C」和「北京今天晴朗，气温 25 度」都对，没法精确匹配。怎么办？
+</p>
+
+<p>
+  主流方案是<strong>用 LLM 当裁判</strong>（LLM-as-a-Judge）：让另一个 LLM 看着问题和回答，按你定的标准打分。听起来玄，其实是工业界标准做法--OpenAI、Anthropic 内部评测都这么干。
+</p>
+
+<pre><code><span class="c"># evals_answer.py</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()
+
+<span class="c"># --- 评测用例：输入 + 评判标准（rubric） ---</span>
+ANSWER_TEST_CASES = [
+    {
+        <span class="s">"input"</span>: <span class="s">"北京今天天气怎么样？"</span>,
+        <span class="s">"rubric"</span>: <span class="s">"""
+- 回答必须包含「晴」这个天气状况
+- 回答必须包含温度数值（25°C 或 25 度都算对）
+- 回答必须用中文
+- 不超过两句话
+"""</span>,
+    },
+    {
+        <span class="s">"input"</span>: <span class="s">"北京和上海温差多少？"</span>,
+        <span class="s">"rubric"</span>: <span class="s">"""
+- 必须给出温差数值（3°C 或 3 度都算对）
+- 必须基于真实天气数据（25 和 28），不能编造
+- 回答用中文，不超过两句话
+"""</span>,
+    },
+    {
+        <span class="s">"input"</span>: <span class="s">"推荐我今天穿什么？我在北京。"</span>,
+        <span class="s">"rubric"</span>: <span class="s">"""
+- 必须基于查询到的北京天气（晴，25°C）给建议
+- 建议要和天气匹配（25°C 晴天不该推荐穿羽绒服）
+- 回答用中文
+"""</span>,
+    },
+]
+
+<span class="c"># --- LLM 裁判 prompt ---</span>
+JUDGE_PROMPT = <span class="s">"""你是一个严格的评分员。请根据以下标准给 Agent 的回答打分。
+
+评分标准：
+{rubric}
+
+用户问题：{input}
+Agent 回答：{answer}
+
+请按以下 JSON 格式返回（只返回 JSON，不要其他文字）：
+{{
+  "pass": true 或 false,
+  "score": 1 到 5 的整数,
+  "reason": "一句话说明为什么这个分"
+}}"""</span>
+
+<span class="k">def</span> judge_answer(input_text: str, answer: str, rubric: str) -> dict:
+    <span class="s">"""用 LLM 当裁判，给 Agent 的回答打分"""</span>
+    resp = client.chat.completions.create(
+        model=<span class="s">"gpt-4o-mini"</span>,  <span class="c"># 裁判用便宜模型就行</span>
+        messages=[{
+            <span class="s">"role"</span>: <span class="s">"user"</span>,
+            <span class="s">"content"</span>: JUDGE_PROMPT.format(
+                rubric=rubric, input=input_text, answer=answer
+            )
+        }],
+        response_format={<span class="s">"type"</span>: <span class="s">"json_object"</span>},  <span class="c"># 强制返回 JSON</span>
+    )
+    <span class="k">return</span> json.loads(resp.choices[0].message.content)
+
+<span class="c"># --- 跑回答评测 ---</span>
+<span class="k">def</span> run_answer_evals():
+    <span class="k">from</span> agent <span class="k">import</span> WeatherAgent, SYSTEM_PROMPT, get_weather, calculate
+
+    results = []
+    <span class="k">for</span> tc <span class="k">in</span> ANSWER_TEST_CASES:
+        <span class="c"># 跑 Agent 拿回答</span>
+        agent = WeatherAgent(system_prompt=SYSTEM_PROMPT, memory_file=<span class="s">"eval_tmp.json"</span>)
+        agent.register_tool(<span class="s">"get_weather"</span>, <span class="s">"查询城市天气"</span>,
+            {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]}, get_weather)
+        agent.register_tool(<span class="s">"calculate"</span>, <span class="s">"计算数学表达式"</span>,
+            {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expression"</span>]}, calculate)
+
+        answer = agent.chat(tc[<span class="s">"input"</span>])
+
+        <span class="c"># 让裁判打分</span>
+        judge_result = judge_answer(tc[<span class="s">"input"</span>], answer, tc[<span class="s">"rubric"</span>])
+        results.append({
+            <span class="s">"input"</span>: tc[<span class="s">"input"</span>],
+            <span class="s">"answer"</span>: answer,
+            <span class="s">"judge"</span>: judge_result,
+        })
+
+    <span class="c"># 汇总</span>
+    passed = sum(1 <span class="k">for</span> r <span class="k">in</span> results <span class="k">if</span> r[<span class="s">"judge"</span>][<span class="s">"pass"</span>])
+    avg_score = sum(r[<span class="s">"judge"</span>][<span class="s">"score"</span>] <span class="k">for</span> r <span class="k">in</span> results) / len(results)
+    print(<span class="s">f"\n回答评测：{passed}/{len(results)} 通过，平均分 {avg_score:.1f}/5\n"</span>)
+    <span class="k">for</span> r <span class="k">in</span> results:
+        status = <span class="s">"✓"</span> <span class="k">if</span> r[<span class="s">"judge"</span>][<span class="s">"pass"</span>] <span class="k">else</span> <span class="s">"✗"</span>
+        print(<span class="s">f"{status} [{r['judge']['score']}/5] {r['input']}"</span>)
+        print(<span class="s">f"    回答: {r['answer']}"</span>)
+        print(<span class="s">f"    评语: {r['judge']['reason']}\n"</span>)
+
+<span class="k">if</span> __name__ == <span class="s">"__main__"</span>:
+    run_answer_evals()</code></pre>
+
+<p>输出长这样：</p>
+
+<pre><code>$ python evals_answer.py
+
+回答评测：2/3 通过，平均分 4.3/5
+
+✓ [5/5] 北京今天天气怎么样？
+    回答: 北京今天晴，气温 25°C。
+    评语: 包含天气状况、温度、中文、简洁，完全符合标准。
+
+✗ [3/5] 北京和上海温差多少？
+    回答: 北京和上海温差约 3 度。
+    评语: 给出了温差但没说明基于哪两个温度，略显含糊。
+
+✓ [5/5] 推荐我今天穿什么？我在北京。
+    回答: 北京今天晴、25°C，建议穿轻薄长袖。
+    评语: 基于真实天气给建议，匹配度好。</code></pre>
+
+<p>
+  看，第 2 个用例被裁判扣分了--回答没错但不完美。这种细粒度反馈是凭感觉跑几次得不到的。
+</p>
+
+<h2>评测的三个原则</h2>
+
+<div class="callout">
+  <p>
+    <strong>1. 固定输入，可重复</strong>。测试用例一旦定下，不要轻易改。这样每次改 prompt、换模型、加工具后跑同一套用例，得分变化才有意义。<strong>评测是 baseline，不是验收</strong>。
+  </p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>2. 分层评测，定位问题</strong>。工具选择层和回答层分开评。如果工具选择准确率掉到 60%，问题在 prompt 或工具描述；如果工具选对了但回答通过率低，问题在最终生成。不分层就只知道「变差了」，不知道「哪里变差了」。
+  </p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>3. LLM 裁判有偏差，但够用</strong>。LLM 当裁判不是完美方案--它可能对自己同类的回答更宽容、可能被回答的语气影响判断。但比起人工评测（慢、贵、主观），它快、便宜、可重复。生产级做法是：LLM 裁判做初筛 + 人工抽检 5-10% 校准。
+  </p>
+</div>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把工具选择评测跑通，记录基准准确率（比如 75%）。然后改 <code>SYSTEM_PROMPT</code>，加一句「与天气无关的问题不要调工具」，再跑一次，看准确率有没有提升。这是评测最直接的用法：<strong>用数据验证改动</strong>。
+  </li>
+  <li>
+    给回答评测加一个用例：「广州会下雨吗？」，rubric 写「必须查询广州天气，必须基于『雷阵雨』这个事实回答」。跑一下，看 Agent 能不能基于工具结果正确推断「会下雨」。
+  </li>
+  <li>
+    <strong>对比模型</strong>：把 <code>WeatherAgent(model="gpt-4o-mini")</code> 改成 <code>model="gpt-4o"</code>，跑同一套用例。比较准确率和平均分。多花 10 倍成本值不值？数据说话。（注意：gpt-4o 比 mini 贵很多，跑完记得切回来）
+  </li>
+  <li>
+    <strong>成本评测</strong>：在 <code>agent.chat</code> 里记录每次调用的 token 数（<code>resp.usage.total_tokens</code>），跑完一套用例汇总总 token 和估算成本。这是产品化必备指标。
+  </li>
+</ol>
+
+<h2>一个容易忽略的陷阱：评测用例污染</h2>
+
+<p>
+  如果你把评测用例直接放进系统提示或 few-shot 示例，Agent 会在评测里表现很好，但真实场景下一样烂。这叫<strong>数据泄漏</strong>--评测用例必须是 Agent 没见过的。
+</p>
+
+<p>规则：</p>
+
+<ul>
+  <li>评测用例不要出现在 system prompt 里</li>
+  <li>评测用例不要作为 few-shot 示例喂给 Agent</li>
+  <li>真实用户提问和评测用例分开维护，避免 LLM 见过评测题</li>
+</ul>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">你改了系统提示后跑评测，发现工具选择准确率从 75% 升到 90%，但回答评测平均分从 4.3 掉到 3.8。这说明什么？</p>
+  <ul class="quiz-options">
+    <li>整体变好了，准确率提升更重要</li>
+    <li>整体变差了，平均分下降更关键</li>
+    <li>工具选择变好了，但最终回答质量下降--可能是新提示让 LLM 选对工具但生成回答时受影响。需要看具体用例定位问题</li>
+    <li>评测系统坏了，结果不可信</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你发现评测结果和真实用户反馈对不上--评测 95% 通过，但用户总抱怨答不好。最可能的原因是？</p>
+  <ul class="quiz-options">
+    <li>评测系统写错了，代码有 bug</li>
+    <li>评测用例不代表真实用户问题--你出的题太简单、太规整，真实用户问的五花八门。需要扩充用例覆盖真实分布</li>
+    <li>LLM 裁判太宽松，应该换更强的模型</li>
+    <li>用户在骗你</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  OpenAI 官方有一份关于用 LLM 评测 LLM 的实践指南，讲了裁判 prompt 设计、偏差校准、和人工抽检的结合方式：
+</p>
+
+<p>
+  <strong>👉 <a href="https://platform.openai.com/docs/guides/evals" target="_blank">Evaluating LLMs - OpenAI</a></strong>
+</p>
+
+<p>
+  Anthropic 也有对应文档，特别讲了如何避免「LLM 裁判对自己同类宽容」的偏差：<a href="https://docs.anthropic.com/en/docs/build-with-claude/evals" target="_blank">Evals - Anthropic</a>。值得两家对照看。
+</p>
+
+<p>
+  如果想用现成工具，<a href="https://github.com/openai/evals" target="_blank">OpenAI evals</a> 和 <a href="https://docs.ragas.io/" target="_blank">Ragas</a>（偏 RAG 评测）是两个主流开源框架。但本课建议先手写一遍，理解原理再用工具--不然工具是黑箱。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你已经能数据化地衡量 Agent 好坏了。下一课是个体验提升专题：<strong>流式输出（SSE）</strong>--让 Agent 的回复一字一字出现，像 ChatGPT 那样。这看起来是细节，但对产品体验影响巨大，是从「能用」到「好用」的关键一跃。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>评测用例不知道怎么写？rubric 怎么定才合理？LLM 裁判给的分数看着不对？把具体用例和输出贴给我，我帮你看是 prompt 问题还是评测设计问题。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0006-agent-as-web-service.html">第 6 课：把 Agent 变成 Web 服务</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'c': '正确。这正是分层评测的价值。如果只看一个总分，你会误判--工具选择和回答质量是两个独立维度，可能一个变好一个变差。分层评测让你准确定位问题：工具选对了但回答变差，可能是新 prompt 影响了 LLM 的生成风格。再看具体用例就能找到根因。',
+      'b': '正确。这是评测最容易踩的坑：用例分布不代表真实分布。你出的题可能是「北京天气」「上海天气」这种规整问题，真实用户会问「明天穿啥」「女朋友在上海她会不会淋雨」这种复杂问题。解决方案：① 收集真实用户问题作为评测用例；② 刻意构造边缘 case；③ 定期更新用例集。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

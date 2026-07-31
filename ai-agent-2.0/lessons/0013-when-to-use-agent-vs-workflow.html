@@ -1,0 +1,379 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 13 课 · 何时用 Agent / 何时用 Workflow</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 13 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">何时用 Agent / 何时用 Workflow</h1>
+  <p class="lesson-meta">不是所有问题都该上 Agent · 约 15 分钟</p>
+</header>
+
+<main>
+
+<h2>前 12 课的一个副作用</h2>
+
+<p>
+  学到这里，你已经有能力做很复杂的 Agent 系统了：多工具、多 Agent 委托、RAG、流式、生产化部署。但这个能力有个危险的副作用--<strong>你看什么问题都像「该上 Agent」</strong>。
+</p>
+
+<p>举个真实场景：你老板说「帮我把每天的销售额汇总成一段话，发到飞书群」。你的第一反应可能是：</p>
+
+<pre><code><span class="c"># 错误的本能反应：上 Agent！</span>
+agent = Agent(
+    tools=[query_database, calculate_summary, format_text, send_feishu_msg],
+    system_prompt=<span class="s">"你是销售汇总助手..."</span>
+)
+agent.run(<span class="s">"把今天的销售汇总发到飞书"</span>)</code></pre>
+
+<p>但这其实是个<strong>固定流程</strong>--每天都是「查数据库 → 算汇总 → 格式化 → 发飞书」这四步，路径完全可预测。用 Agent 反而是杀鸡用牛刀：LLM 调用贵、可能出错、还不可预测。正确做法是直接写代码：</p>
+
+<pre><code><span class="c"># 正确做法：Workflow（固定代码流程）</span>
+<span class="k">def</span> daily_sales_report():
+    data = query_database(<span class="s">"SELECT * FROM sales WHERE date = TODAY"</span>)
+    summary = <span class="s">f"今日销售 {len(data)} 单，总额 {sum(d.amount for d in data)} 元"</span>
+    send_feishu_msg(<span class="s">"销售群"</span>, summary)
+
+<span class="c"># 每天定时跑这个函数就行，不需要 LLM</span></code></pre>
+
+<p>
+  这一课就是讲这个判断：<strong>什么时候该上 Agent，什么时候该用 Workflow，什么时候两者都不需要</strong>。
+</p>
+
+<h2>核心区分：Workflow vs Agent</h2>
+
+<p>Anthropic 在《Building effective agents》里给了清晰的定义，这是业界共识：</p>
+
+<table>
+  <thead>
+    <tr><th>类型</th><th>路径谁决定</th><th>特点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Workflow</strong></td>
+      <td>代码写死</td>
+      <td>路径固定、可预测、便宜、可靠。LLM 只在固定步骤里被调用。</td>
+    </tr>
+    <tr>
+      <td><strong>Agent</strong></td>
+      <td>LLM 自己决定</td>
+      <td>路径灵活、能处理意外、但贵、慢、不可预测。</td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    一句话：<strong>路径可预测就用 Workflow，路径需要 LLM 灵活决定才用 Agent</strong>。Agent 的核心价值是「自主决策」，如果你的任务路径是固定的，这个价值就用不上，反而成了累赘。
+  </p>
+</blockquote>
+
+<h2>常见 Workflow 模式</h2>
+
+<p>Anthropic 总结了五种常用 Workflow 模式，都不需要完整的 Agent 循环：</p>
+
+<h3>1. Prompt Chaining（提示链）</h3>
+
+<p>把一个任务拆成固定步骤，每步调一次 LLM，串起来：</p>
+
+<pre><code><span class="c"># 写文档 → 翻译 → 校对</span>
+draft = llm(<span class="s">"写一段产品介绍"</span>)
+translated = llm(<span class="s">f"翻译成英文: {draft}"</span>)
+final = llm(<span class="s">f"校对这段英文: {translated}"</span>)</code></pre>
+
+<p>适用：任务能清晰拆成固定步骤，每步独立。比让一个 Agent 「写+翻译+校对」更可控。</p>
+
+<h3>2. Routing（路由）</h3>
+
+<p>先分类，再走不同分支：</p>
+
+<pre><code><span class="k">def</span> handle(msg):
+    category = llm(<span class="s">f"分类这个客户问题：技术/账单/售后。只返回类别名。问题: {msg}"</span>)
+    <span class="k">if</span> category == <span class="s">"技术"</span>:
+        <span class="k">return</span> tech_handler(msg)
+    <span class="k">elif</span> category == <span class="s">"账单"</span>:
+        <span class="k">return</span> billing_handler(msg)
+    <span class="k">else</span>:
+        <span class="k">return</span> support_handler(msg)</code></pre>
+
+<p>适用：问题类型有限且可枚举。比让一个 Agent 处理所有类型更准（每个 handler 可以有专门的 prompt 和工具）。</p>
+
+<h3>3. Parallelization（并行）</h3>
+
+<p>多个子任务并行跑，汇总结果：</p>
+
+<pre><code><span class="k">import</span> asyncio
+
+<span class="k">async def</span> analyze(doc):
+    <span class="c"># 三个维度并行分析</span>
+    sentiment, summary, keywords = <span class="k">await</span> asyncio.gather(
+        llm(<span class="s">f"情感分析: {doc}"</span>),
+        llm(<span class="s">f"摘要: {doc}"</span>),
+        llm(<span class="s">f"关键词: {doc}"</span>),
+    )
+    <span class="k">return</span> {<span class="s">"sentiment"</span>: sentiment, <span class="s">"summary"</span>: summary, <span class="s">"keywords"</span>: keywords}</code></pre>
+
+<p>适用：子任务互相独立。比串行让一个 Agent 做快 3 倍。</p>
+
+<h3>4. Orchestrator-Workers（编排-执行）</h3>
+
+<p>一个编排器拆任务，多个执行器并行干活，编排器汇总：</p>
+
+<pre><code><span class="c"># 写一篇多章节报告</span>
+outline = llm(<span class="s">"给出报告大纲：1. 背景 2. 现状 3. 建议"</span>)
+chapters = <span class="k">await</span> asyncio.gather(*[
+    llm(<span class="s">f"写第{i}章: {topic}"</span>) <span class="k">for</span> i, topic <span class="k">in</span> enumerate(outline)
+])
+report = llm(<span class="s">f"把这些章节拼成连贯报告: {chapters}"</span>)</code></pre>
+
+<p>这看起来像多 Agent，但区别是<strong>编排逻辑是代码写死的</strong>，不是 LLM 自主决定。适合「任务结构固定但内容需要 LLM 生成」的场景。</p>
+
+<h3>5. Evaluator-Optimizer（评估-优化）</h3>
+
+<p>生成 → 评估 → 不合格就重新生成：</p>
+
+<pre><code><span class="k">def</span> write_until_good(task):
+    <span class="k">for</span> _ <span class="k">in</span> range(3):
+        draft = llm(<span class="s">f"写: {task}"</span>)
+        score = llm(<span class="s">f"打分 0-10: {draft}"</span>)
+        <span class="k">if</span> int(score) &gt;= 8:
+            <span class="k">return</span> draft
+        task = <span class="s">f"{task}\n上次得分 {score}，请改进"</span>
+    <span class="k">return</span> draft</code></pre>
+
+<p>适用：有明确质量标准的生成任务。比让 Agent 自己判断「够不够好」更可控。</p>
+
+<h2>决策框架</h2>
+
+<p>面对一个新需求，按这个顺序问自己：</p>
+
+<ol>
+  <li>
+    <strong>路径能预先写死吗？</strong>
+    <ul>
+      <li>能 → <strong>Workflow</strong>（代码写流程，LLM 只在固定步骤用）</li>
+      <li>不能，要 LLM 看情况决定 → 继续问</li>
+    </ul>
+  </li>
+  <li>
+    <strong>需要调几个工具？</strong>
+    <ul>
+      <li>1 个 → 直接调，不用 Agent 循环</li>
+      <li>2-5 个，且选择逻辑简单 → Workflow + Routing</li>
+      <li>5+ 个，或选择逻辑复杂、要看中间结果决定下一步 → <strong>Agent</strong></li>
+    </ul>
+  </li>
+  <li>
+    <strong>能容忍多少不可预测性？</strong>
+    <ul>
+      <li>要求 100% 可预测（如金融交易）→ Workflow，别用 Agent</li>
+      <li>能容忍偶尔跑偏、有人兜底 → Agent 可以</li>
+    </ul>
+  </li>
+  <li>
+    <strong>延迟和成本能接受吗？</strong>
+    <ul>
+      <li>要亚秒级响应 → 别用 Agent，LLM 调用就秒级了</li>
+      <li>能接受 3-30 秒 → Agent 可以</li>
+    </ul>
+  </li>
+</ol>
+
+<h2>场景对照表</h2>
+
+<table>
+  <thead>
+    <tr><th>场景</th><th>推荐</th><th>理由</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>每天定时汇总销售发飞书</td><td>Workflow（甚至不用 LLM）</td><td>路径固定，代码写死最可靠</td></tr>
+    <tr><td>客服自动回复</td><td>Workflow + Routing</td><td>问题类型有限，分类后走专用 handler</td></tr>
+    <tr><td>文档问答</td><td>Workflow + RAG</td><td>检索 + LLM 生成，路径固定</td></tr>
+    <tr><td>代码生成助手</td><td>Agent</td><td>要看代码、跑测试、改 bug，路径不固定</td></tr>
+    <tr><td>数据分析助手</td><td>Agent</td><td>用户问题多样，要查数据、画图、解释，路径灵活</td></tr>
+    <tr><td>翻译</td><td>Workflow（Prompt Chaining）</td><td>就是一次 LLM 调用，不需要循环</td></tr>
+    <tr><td>邮件起草</td><td>Workflow</td><td>一次生成，可选评估-优化</td></tr>
+    <tr><td>编程助手（IDE 里）</td><td>Agent</td><td>要看文件、改代码、跑测试、看报错、再改</td></tr>
+    <tr><td>舆情监控</td><td>Workflow + Parallelization</td><td>多源并行抓取 + 分类，路径固定</td></tr>
+    <tr><td>投资研究助手</td><td>Agent</td><td>要查财报、算指标、对比、写报告，路径看问题定</td></tr>
+    <tr><td>游戏 NPC 对话</td><td>Workflow（单次 LLM 调用）</td><td>实时性要求高，不能循环</td></tr>
+    <tr><td>自动化测试生成</td><td>Agent</td><td>要看代码、生成测试、跑、看结果、修</td></tr>
+  </tbody>
+</table>
+
+<h2>三个反模式</h2>
+
+<h3>反模式 1：为了用 Agent 而用</h3>
+
+<p>
+  最常见的坑。听到「Agent 很厉害」就把所有 LLM 应用都做成 Agent。结果是简单问题复杂化、成本翻倍、还不可控。
+</p>
+
+<p><strong>自查</strong>：你的 Agent 如果去掉循环、每次固定调一次 LLM，结果会差多少？如果差不多，就不该用 Agent。</p>
+
+<h3>反模式 2：把固定流程硬塞给 Agent</h3>
+
+<p>
+  明明路径固定，却让 Agent 「自主决定」--然后又用超长的 system prompt 告诉它「必须先做 A 再做 B 再做 C」。这等于用 LLM 模拟一个 if-else，又贵又不可靠。
+</p>
+
+<p><strong>自查</strong>：你的 system prompt 里是不是写了「必须按以下步骤」？如果是，考虑改成 Workflow。</p>
+
+<h3>反模式 3：Agent 工具太多</h3>
+
+<p>
+  给一个 Agent 塞 20 个工具，期待它「什么都能干」。结果是工具选择准确率暴跌，LLM 经常选错。
+</p>
+
+<p><strong>解法</strong>：用第 12 课的多 Agent 委托，按领域拆分。或者用 Routing 先分类，再走专用 Workflow。</p>
+
+<h2>一个真实案例：智能客服</h2>
+
+<p>用这个案例串起所有判断。需求：「做一个客服系统，能回答产品问题、处理退款、查订单」。</p>
+
+<p><strong>错误做法</strong>：一个大 Agent，工具包括 [search_docs, process_refund, query_order, ...]，system prompt 写一堆规则。</p>
+
+<p><strong>正确做法</strong>：分层架构。</p>
+
+<pre><code><span class="c"># 第一层：Routing（Workflow）</span>
+<span class="k">def</span> handle(user_msg):
+    intent = llm(<span class="s">f"分类意图：product_question/refund/order/other。只返回类别。消息: {user_msg}"</span>)
+
+    <span class="k">if</span> intent == <span class="s">"product_question"</span>:
+        <span class="c"># 第二层：Workflow + RAG（固定流程）</span>
+        docs = retrieve(user_msg, n=3)
+        <span class="k">return</span> llm(<span class="s">f"基于文档回答: {docs}\n问题: {user_msg}"</span>)
+
+    <span class="k">elif</span> intent == <span class="s">"refund"</span>:
+        <span class="c"># 第二层：Agent（需要多步：查订单 → 验证资格 → 执行退款）</span>
+        <span class="k">return</span> refund_agent.run(user_msg)  <span class="c"># 工具：query_order, check_policy, process_refund</span>
+
+    <span class="k">elif</span> intent == <span class="s">"order"</span>:
+        <span class="c"># 第二层：Workflow（查订单就是一次调用）</span>
+        order = query_order(extract_order_id(user_msg))
+        <span class="k">return</span> format_order(order)
+
+    <span class="k">else</span>:
+        <span class="k">return</span> <span class="s">"转人工客服"</span></code></pre>
+
+<p>
+  看这个架构：<strong>外层是 Workflow（Routing），内层按需选 Workflow 或 Agent</strong>。产品问答用 RAG Workflow（路径固定），退款用 Agent（需要多步且路径灵活），查订单用纯 Workflow。这就是「分而治之」--每个子问题用最合适的方案。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>这是工程成熟的标志</strong>：不是「全 Agent」或「全 Workflow」，而是<strong>按子问题的特性混合使用</strong>。新手倾向于一个方案套所有问题，老手会拆解后分别选最合适的。
+  </p>
+</div>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    拿你身边的一个真实需求（工作或生活中的），用决策框架判断该用 Workflow 还是 Agent。写出判断过程：路径能不能写死？要几个工具？能容忍多少不可预测性？
+  </li>
+  <li>
+    <strong>改造实验</strong>：找一个你之前用 Agent 做的场景，试着改成 Workflow。对比两者的准确率、延迟、成本。很多场景你会惊讶地发现 Workflow 又快又准又便宜。
+  </li>
+  <li>
+    <strong>混合架构</strong>：实现上面那个客服案例的分层架构。体会「外层 Routing + 内层按需选 Workflow/Agent」的设计。
+  </li>
+  <li>
+    （思考题）<strong>找反例</strong>：想一个「看着像 Workflow 但其实该用 Agent」的场景。提示：路径在大多数情况下固定，但偶尔需要灵活处理。这种「95% 固定 + 5% 灵活」的场景怎么设计？
+  </li>
+</ol>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">Workflow 和 Agent 的核心区别是？</p>
+  <ul class="quiz-options">
+    <li>Workflow 用 OpenAI，Agent 用 Claude</li>
+    <li>Workflow 的路径由代码写死（可预测、便宜、可靠），Agent 的路径由 LLM 自主决定（灵活、但贵、慢、不可预测）。路径能写死就用 Workflow</li>
+    <li>Workflow 是命令行的，Agent 是 Web 的</li>
+    <li>Agent 比 Workflow 更先进，应该优先用</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">需求：「每天早上把昨日的销售数据汇总成一段话，发到飞书群」。该用什么？</p>
+  <ul class="quiz-options">
+    <li>多 Agent 系统，一个查数据一个写汇总一个发飞书</li>
+    <li>单 Agent，工具包括 query_db + format + send_feishu</li>
+    <li>Workflow（甚至不用 LLM）--路径完全固定：查数据库 → 算汇总 → 发飞书。用代码写死最可靠、最便宜。LLM 只在需要「写一段自然语言汇总」时调一次</li>
+    <li>RAG，检索历史销售数据</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  这一课的核心内容直接来自 Anthropic 的这篇文章，它是目前业界对 Workflow vs Agent 最清晰的论述：
+</p>
+
+<p>
+  <strong>👉 <a href="https://www.anthropic.com/research/building-effective-agents" target="_blank">Building effective agents - Anthropic</a></strong>
+</p>
+
+<p>
+  OpenAI 的 Cookbook 也有类似主题的实践指南，偏代码：<a href="https://cookbook.openai.com/examples/orchestrating_agents" target="_blank">Orchestrating Agents - OpenAI Cookbook</a>
+</p>
+
+<p>
+  Lilian Weng 的综述里也讨论了 Agent 的适用边界：<a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank">LLM Powered Autonomous Agents</a>
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>恭喜--到这一课，你不仅会做 Agent，还知道什么时候不该做。这是最后一节理论课。下一课是<strong>项目实战</strong>：从 0 到 1 做一个你自己的 Agent 产品。把前 13 课学的所有东西用起来--需求分析、架构选择（Workflow/Agent/混合）、实现、评测、部署、迭代。这是整个课程的毕业设计。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>拿不准某个场景该用 Workflow 还是 Agent？把具体需求告诉我，我陪你过一遍决策框架。这种判断能力是看再多文档也练不出来的，得在真实场景里反复练。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0012-multi-agent-handoff.html">第 12 课：多 Agent 委托</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。这是 Anthropic 给出的业界共识定义。Workflow 是「代码编排 LLM」，路径可预测；Agent 是「LLM 自主编排」，路径灵活。核心判断：路径能不能预先写死？能就用 Workflow，不能才用 Agent。',
+      'c': '正确。这是典型的「不该用 Agent」场景。路径完全固定，用代码写死最可靠、最便宜。LLM 最多在「把数据写成自然语言」这一步用一次。很多人听到 AI 就想上 Agent，但工程成熟度的标志是「按需选择，不盲目堆复杂度」。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

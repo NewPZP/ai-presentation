@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 11 课 · RAG 与向量记忆</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 11 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">RAG 与向量记忆</h1>
+  <p class="lesson-meta">让 Agent 查海量知识，而不只是记对话 · 约 18 分钟</p>
+</header>
+
+<main>
+
+<h2>前 10 课的记忆有什么局限？</h2>
+
+<p>
+  到目前为止，你的 Agent 只有一种记忆：messages 列表。它存的是<strong>对话流水账</strong>--你说一句、它答一句、工具调用的结果。这种记忆在两类场景下会撞墙：
+</p>
+
+<ol>
+  <li>
+    <strong>知识太多</strong>：你想让 Agent 能回答「公司 HR 政策」「产品文档」「去年的客户邮件」--这些加起来可能几十万字，全塞进 messages 既贵又超 token 上限。
+  </li>
+  <li>
+    <strong>对话太长</strong>：第 4 课的滑动窗口会丢老消息，摘要压缩也丢细节。用户 50 轮前说过的关键事实，第 51 轮可能就找不到了。
+  </li>
+</ol>
+
+<p>
+  这两个问题的共同点是：<strong>你需要的信息存在，但 LLM 看不到</strong>。RAG（Retrieval-Augmented Generation，检索增强生成）就是解法--不把所有东西塞给 LLM，而是先检索出和当前问题最相关的几段，只把这些喂给 LLM。
+</p>
+
+<blockquote>
+  <p>
+    类比：你写开卷考试，不会把整本教材带进去翻--太大、太慢。你会先查目录、找到相关章节、只读那几页再答题。RAG 就是给 LLM 配一个「能查目录的图书管理员」。
+  </p>
+</blockquote>
+
+<h2>RAG 的三步</h2>
+
+<p>所有 RAG 系统都做三件事：</p>
+
+<ol>
+  <li><strong>切分（Chunking）</strong>：把长文档切成小段（几百字一段），方便检索</li>
+  <li><strong>向量化（Embedding）</strong>：把每段文本转成一个数字向量，语义相近的文本向量也相近</li>
+  <li><strong>检索（Retrieval）</strong>：用户提问时，把问题也向量化，找出向量最相近的几段，塞进 LLM 上下文</li>
+</ol>
+
+<p>下面逐步实现。</p>
+
+<h2>第一步：Embedding 是什么？</h2>
+
+<p>
+  Embedding 是把一段文本映射成一组数字（比如 1536 个浮点数）。关键性质：<strong>语义相近的文本，向量也相近</strong>。
+</p>
+
+<pre><code><span class="c"># 用 OpenAI 的 embedding 模型</span>
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+client = OpenAI()
+
+resp = client.embeddings.create(
+    model=<span class="s">"text-embedding-3-small"</span>,
+    input=<span class="s">"今天北京天气晴朗"</span>
+)
+vector = resp.data[0].embedding  <span class="c"># 长度 1536 的浮点数列表</span>
+<span class="c"># [0.0123, -0.0456, 0.0789, ...]</span>
+
+<span class="c"># 语义相近的文本，向量距离近</span>
+<span class="k">import</span> math
+<span class="k">def</span> cosine_similarity(v1, v2):
+    <span class="s">"""两个向量的余弦相似度，越接近 1 越相似"""</span>
+    dot = sum(a * b <span class="k">for</span> a, b <span class="k">in</span> zip(v1, v2))
+    norm1 = math.sqrt(sum(a*a <span class="k">for</span> a <span class="k">in</span> v1))
+    norm2 = math.sqrt(sum(b*b <span class="k">for</span> b <span class="k">in</span> v2))
+    <span class="k">return</span> dot / (norm1 * norm2)
+
+v1 = client.embeddings.create(model=<span class="s">"text-embedding-3-small"</span>, input=<span class="s">"今天北京天气晴朗"</span>).data[0].embedding
+v2 = client.embeddings.create(model=<span class="s">"text-embedding-3-small"</span>, input=<span class="s">"北京今日晴"</span>).data[0].embedding
+v3 = client.embeddings.create(model=<span class="s">"text-embedding-3-small"</span>, input=<span class="s">"我想吃火锅"</span>).data[0].embedding
+
+print(cosine_similarity(v1, v2))  <span class="c"># ~0.85 高相似</span>
+print(cosine_similarity(v1, v3))  <span class="c"># ~0.3 低相似</span></code></pre>
+
+<p>
+  这个性质是 RAG 的基础--用向量距离判断「这段文本和用户问题相不相关」。
+</p>
+
+<h2>第二步：切分文档</h2>
+
+<p>
+  假设你有一份产品文档，要让 Agent 能回答相关问题。先切成小段：
+</p>
+
+<pre><code><span class="c"># chunking.py</span>
+<span class="k">def</span> chunk_text(text: str, chunk_size: int = 500, overlap: int = 50) -> list[str]:
+    <span class="s">"""把长文本切成有重叠的小段。
+    
+    chunk_size: 每段字符数。500 字左右适合中文。
+    overlap: 相邻段重叠多少字符。避免把完整句子切断。
+    """</span>
+    chunks = []
+    start = 0
+    <span class="k">while</span> start &lt; len(text):
+        end = start + chunk_size
+        chunk = text[start:end]
+        chunks.append(chunk)
+        start = end - overlap  <span class="c"># 往后退一点，下一段和这段有重叠</span>
+    <span class="k">return</span> chunks
+
+<span class="c"># 示例</span>
+doc = <span class="s">"""
+产品名称：智询天气
+版本：2.3.0
+发布日期：2026-07-01
+
+## 功能概述
+智询天气是一个基于 AI 的天气助手，支持查询全球城市的实时天气、未来 7 天预报、空气质量。
+
+## 定价
+- 免费版：每天 50 次查询
+- 专业版：每月 19 元，无限查询，支持历史数据
+- 企业版：按 API 调用量计费，联系销售
+
+## 退款政策
+购买后 7 天内无理由退款。需要提供订单号，退款将在 3-5 个工作日到账。
+
+## 常见问题
+Q: 支持哪些城市？
+A: 全球 10 万+ 城市，包括所有省会和地级市。
+
+Q: 数据来源是什么？
+A: 我们聚合了多家气象服务，包括国家气象局、Weather API 等。
+"""</span>
+
+chunks = chunk_text(doc)
+print(<span class="s">f"切成 {len(chunks)} 段"</span>)
+<span class="k">for</span> i, c <span class="k">in</span> enumerate(chunks):
+    print(<span class="s">f"-- 段 {i} --\n{c[:80]}...\n"</span>)</code></pre>
+
+<p>切分有两个要点：</p>
+
+<ul>
+  <li><strong>chunk_size</strong>：太小会丢上下文，太大会检索不准。中文 300-800 字是常见范围。</li>
+  <li><strong>overlap</strong>：相邻段重叠 50-100 字，避免把关键句子正好切断。</li>
+</ul>
+
+<h2>第三步：向量化并存进向量库</h2>
+
+<p>
+  我们用 <strong>Chroma</strong>，一个轻量的本地向量数据库。<code>pip install chromadb</code> 就能跑，无需服务器。
+</p>
+
+<pre><code><span class="c"># vector_store.py</span>
+<span class="k">import</span> chromadb
+
+client = chromadb.PersistentClient(path=<span class="s">"./vector_db"</span>)  <span class="c"># 数据存磁盘</span>
+collection = client.get_or_create_collection(name=<span class="s">"product_docs"</span>)
+
+<span class="k">from</span> openai <span class="k">import</span> OpenAI
+oa_client = OpenAI()
+
+<span class="k">def</span> embed_and_store(chunks: list[str], source: str = <span class="s">"doc"</span>):
+    <span class="s">"""把文本段向量化后存进 Chroma"""</span>
+    <span class="c"># 批量生成 embedding</span>
+    embeddings = []
+    <span class="k">for</span> chunk <span class="k">in</span> chunks:
+        resp = oa_client.embeddings.create(
+            model=<span class="s">"text-embedding-3-small"</span>,
+            input=chunk
+        )
+        embeddings.append(resp.data[0].embedding)
+
+    <span class="c"># 存进 Chroma</span>
+    collection.add(
+        ids=[<span class="s">f"{source}_{i}"</span> <span class="k">for</span> i <span class="k">in</span> range(len(chunks))],
+        documents=chunks,
+        embeddings=embeddings,
+        metadatas=[{<span class="s">"source"</span>: source, <span class="s">"chunk_index"</span>: i} <span class="k">for</span> i <span class="k">in</span> range(len(chunks))]
+    )
+
+<span class="c"># 把刚才切的段存进去</span>
+embed_and_store(chunks, source=<span class="s">"product_doc"</span>)</code></pre>
+
+<h2>第四步：检索</h2>
+
+<p>用户提问时，把问题向量化，找最相似的几段：</p>
+
+<pre><code><span class="k">def</span> retrieve(query: str, n_results: int = 3) -> list[dict]:
+    <span class="s">"""检索和 query 最相关的 n 段文本"""</span>
+    <span class="c"># 问题向量化</span>
+    query_resp = oa_client.embeddings.create(
+        model=<span class="s">"text-embedding-3-small"</span>,
+        input=query
+    )
+    query_vector = query_resp.data[0].embedding
+
+    <span class="c"># 在 Chroma 里找最相似的</span>
+    results = collection.query(
+        query_embeddings=[query_vector],
+        n_results=n_results
+    )
+
+    <span class="k">return</span> [
+        {
+            <span class="s">"text"</span>: doc,
+            <span class="s">"source"</span>: meta[<span class="s">"source"</span>],
+            <span class="s">"distance"</span>: dist
+        }
+        <span class="k">for</span> doc, meta, dist <span class="k">in</span> zip(
+            results[<span class="s">"documents"</span>][0],
+            results[<span class="s">"metadatas"</span>][0],
+            results[<span class="s">"distances"</span>][0]
+        )
+    ]
+
+<span class="c"># 测试</span>
+<span class="k">for</span> r <span class="k">in</span> retrieve(<span class="s">"退款政策是什么？"</span>):
+    print(<span class="s">f"[相似度 {1-r['distance']:.2f}] {r['text'][:80]}..."</span>)</code></pre>
+
+<p>输出：</p>
+
+<pre><code>[相似度 0.78] 产品名称：智询天气...
+[相似度 0.74] ## 退款政策
+购买后 7 天内无理由退款。需要提供订单号...
+[相似度 0.71] ## 定价
+- 免费版：每天 50 次查询...</code></pre>
+
+<p>
+  看--它准确地把「退款政策」那一段排到了前面。这就是语义检索的威力：问题里没出现「退款」两个字（如果用户问的是「能退钱吗」），向量相似度也能找到相关段落。
+</p>
+
+<h2>把 RAG 接进 Agent</h2>
+
+<p>
+  现在让 Agent 在回答前先检索。两种集成方式：
+</p>
+
+<h3>方式 A：作为工具（Agent 自己决定何时检索）</h3>
+
+<pre><code><span class="c"># 把检索做成一个工具，让 Agent 自己调</span>
+<span class="k">def</span> search_docs(query: str) -> str:
+    <span class="s">"""检索产品文档，返回最相关的几段"""</span>
+    results = retrieve(query, n_results=3)
+    <span class="k">if not</span> results:
+        <span class="k">return</span> <span class="s">"没找到相关内容"</span>
+    <span class="k">return</span> <span class="s">"\n---\n"</span>.join([r[<span class="s">"text"</span>] <span class="k">for</span> r <span class="k">in</span> results])
+
+<span class="c"># 注册成工具</span>
+agent.register_tool(
+    name=<span class="s">"search_docs"</span>,
+    description=<span class="s">"当用户问产品功能、定价、退款、使用方法等问题时，检索产品文档获取答案"</span>,
+    params={<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"query"</span>]},
+    fn=search_docs,
+)</code></pre>
+
+<h3>方式 B：作为前置步骤（每次都先检索）</h3>
+
+<pre><code><span class="k">def</span> chat_with_rag(user_input: str) -> str:
+    <span class="s">"""每次对话前先检索，把相关文档塞进 system 消息"""</span>
+    <span class="c"># 1. 检索</span>
+    results = retrieve(user_input, n_results=3)
+    context = <span class="s">"\n---\n"</span>.join([r[<span class="s">"text"</span>] <span class="k">for</span> r <span class="k">in</span> results])
+
+    <span class="c"># 2. 把检索结果作为上下文塞进 messages</span>
+    augmented_system = SYSTEM_PROMPT + <span class="s">f"\n\n参考以下文档回答（如果相关）：\n{context}"</span>
+
+    <span class="c"># 3. 正常调用 Agent</span>
+    messages = [
+        {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: augmented_system},
+        {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input}
+    ]
+    <span class="c"># ... 调 LLM</span></code></pre>
+
+<p>两种方式的取舍：</p>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>方式 A（作为工具）</th><th>方式 B（前置检索）</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>何时检索</td>
+      <td>LLM 决定（灵活但可能漏检）</td>
+      <td>每次都检索（保证有，但浪费）</td>
+    </tr>
+    <tr>
+      <td>实现复杂度</td>
+      <td>低（加个工具）</td>
+      <td>低（改 system 拼接）</td>
+    </tr>
+    <tr>
+      <td>成本</td>
+      <td>只在需要时检索</td>
+      <td>每次都调 embedding</td>
+    </tr>
+    <tr>
+      <td>适用场景</td>
+      <td>通用 Agent，问题类型多样</td>
+      <td>固定领域的问答（如客服）</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>Agent 工程的常见误区：上来就 RAG</strong>。很多人听到 RAG 就兴奋，所有问题都套。但 RAG 有成本（embedding 调用、向量库维护）、有误差（检索不准会误导 LLM）、有复杂度。先想清楚：<strong>你的场景真的需要检索外部知识吗？</strong>如果信息量小、能直接塞进 system prompt，就别上 RAG。
+  </p>
+</div>
+
+<h2>用 RAG 替代对话历史摘要</h2>
+
+<p>
+  除了检索外部文档，RAG 还能解决第 4 课遗留的问题：<strong>对话历史太长怎么压缩</strong>。思路：把每轮对话存进向量库，下次提问时只检索相关的几轮，不喂完整历史。
+</p>
+
+<pre><code><span class="c"># 每轮对话后存进向量库</span>
+<span class="k">def</span> save_turn_to_vector_store(user_input: str, reply: str):
+    <span class="s">"""把一轮对话作为一段文本存进向量库"""</span>
+    text = <span class="s">f"用户: {user_input}\n助手: {reply}"</span>
+    embed_and_store([text], source=<span class="s">"conversation"</span>)
+
+<span class="c"># 下次提问时检索相关历史</span>
+<span class="k">def</span> get_relevant_history(query: str, n: int = 5) -> list[str]:
+    <span class="s">"""检索和当前问题最相关的 n 轮历史对话"""</span>
+    results = retrieve(query, n_results=n)
+    <span class="k">return</span> [r[<span class="s">"text"</span>] <span class="k">for</span> r <span class="k">in</span> results <span class="k">if</span> r[<span class="s">"source"</span>] == <span class="s">"conversation"</span>]
+
+<span class="c"># chat 时用检索到的历史替代完整历史</span>
+<span class="k">def</span> chat_with_vector_memory(user_input: str) -> str:
+    relevant = get_relevant_history(user_input, n=5)
+    context = <span class="s">"\n---\n"</span>.join(relevant)
+    messages = [
+        {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: SYSTEM_PROMPT + <span class="s">f"\n\n相关历史：\n{context}"</span>},
+        {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input}
+    ]
+    <span class="c"># ... 调 LLM，存这一轮到向量库</span></code></pre>
+
+<p>
+  这是「长期记忆-知识型」的实现方式：不再保留完整对话流水，而是按语义检索相关片段。适合超长对话（几百轮）的场景。
+</p>
+
+<h2>RAG 的常见坑</h2>
+
+<h3>坑 1：检索不准，LLM 被误导</h3>
+
+<p>
+  如果检索回来的内容其实不相关，LLM 还是会基于它回答--产生「看似合理但错误」的答案。这是 RAG 最常见的问题。
+</p>
+
+<p>缓解方式：</p>
+
+<ul>
+  <li><strong>调相似度阈值</strong>：距离太大的结果直接丢弃，返回「没找到相关内容」</li>
+  <li><strong>让 LLM 自己判断</strong>：在 prompt 里加「如果检索内容不相关，就忽略它，基于自己知识回答」</li>
+  <li><strong>rerank</strong>：先用向量检索粗筛 10 条，再用一个小模型对这 10 条按相关度精排，取前 3 条</li>
+</ul>
+
+<h3>坑 2：切分不当丢上下文</h3>
+
+<p>
+  如果一段关键信息正好被切到两段里（比如「退款需要订单号」和「7 天内可退」），检索可能只命中一段，LLM 拿到不完整信息。
+</p>
+
+<p>缓解：overlap 重叠、按段落/标题切分（而非纯按字符数）、chunk_size 设大一点。</p>
+
+<h3>坑 3：embedding 过期</h3>
+
+<p>
+  文档更新了，但向量库里还是旧的。用户问「现在定价多少」，检索到的是老价格。
+</p>
+
+<p>缓解：建立<strong>更新流程</strong>，文档改了就重新切分、重新 embedding、覆盖旧数据。</p>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把一份你自己的文档（产品说明、个人笔记、公司 wiki 导出）切分、向量化、存进 Chroma。然后写几个问题测试检索效果，看相似度排序合不合理。
+  </li>
+  <li>
+    把 RAG 作为工具接进 Agent（方式 A）。问「智询天气能退款吗？」「专业版多少钱？」，观察 Agent 会不会主动调 <code>search_docs</code>。
+  </li>
+  <li>
+    <strong>对比 RAG vs 直接塞进 system</strong>：如果文档只有 2000 字，直接塞进 system prompt 也能用。对比两种方式在准确率、延迟、成本上的差异。你会理解为什么小文档不该上 RAG。
+  </li>
+  <li>
+    （进阶）<strong>用 rerank 提升准确率</strong>：用 <code>cohere</code> 的 rerank API，或用 LLM 自己对 10 条候选精排。对比前后准确率。
+  </li>
+</ol>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">RAG 的核心思路是？</p>
+  <ul class="quiz-options">
+    <li>把所有知识都塞进 LLM 的 system prompt</li>
+    <li>把文档切成小段向量化存进向量库，用户提问时检索最相关的几段塞进 LLM 上下文，让 LLM 基于这些片段回答</li>
+    <li>训练一个专门的模型来记忆所有知识</li>
+    <li>让 LLM 自己上网搜索</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你给 Agent 接了 RAG，但用户反馈「经常答错，而且答得很自信」。最可能的原因和解决？</p>
+  <ul class="quiz-options">
+    <li>LLM 太笨，换更大的模型</li>
+    <li>RAG 不靠谱，去掉就行</li>
+    <li>检索准确率低--检索回来的内容其实不相关，但 LLM 还是基于它编造答案。需要调相似度阈值、改切分策略、加 rerank，并在 prompt 里告诉 LLM「不相关就忽略」</li>
+    <li>向量库坏了，重启</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  OpenAI 官方对 embeddings 讲得最清楚，含模型选择、用法、最佳实践：
+</p>
+
+<p>
+  <strong>👉 <a href="https://platform.openai.com/docs/guides/embeddings" target="_blank">Embeddings - OpenAI</a></strong>
+</p>
+
+<p>
+  Chroma 官方文档，覆盖从安装到进阶用法：<a href="https://docs.trychroma.com/" target="_blank">Chroma Docs</a>
+</p>
+
+<p>
+  Anthropic 的 RAG 上下文工程指南，讲了 rerank、检索质量优化等进阶话题：<a href="https://docs.anthropic.com/en/docs/build-with-claude/retrieval-augmented-generation" target="_blank">RAG - Anthropic</a>
+</p>
+
+<p>
+  想深入理解 RAG 的工程细节，<a href="https://docs.ragas.io/" target="_blank">Ragas</a> 是专门评测 RAG 系统的开源工具，能帮你量化检索准确率。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你的 Agent 已经突破了「只记对话」的局限，能查询海量外部知识了。下一课进入多 Agent 时代：<strong>多 Agent 委托</strong>。当一个 Agent 干不了所有事时，怎么让它把活分给子 Agent？我们会用 OpenAI Agents SDK 实现一个「主 Agent 分派任务给专家 Agent」的模式，这是复杂 Agent 系统的雏形。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>检索效果不好？切分不知道怎么调？向量库选型纠结（Chroma / Qdrant / Pinecone）？把场景告诉我。RAG 是个工程性很强的领域，不同场景的最佳实践差别很大。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0010-switch-to-claude.html">第 10 课：切换到 Claude</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。RAG 的核心是「检索增强」--不把所有知识塞给 LLM，而是先检索出最相关的几段，只把这些喂进去。这样既突破了 token 限制，又保持了知识的可更新性（改文档重新向量化就行，不用重新训练模型）。',
+      'c': '正确。这是 RAG 最常见的故障模式：检索不准 + LLM 编造 = 看似合理但错误的答案。根因是检索质量，不是 LLM 能力。解决方案都在检索侧：调相似度阈值过滤不相关结果、改切分策略让关键信息完整、加 rerank 精排、在 prompt 里让 LLM 学会忽略不相关内容。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

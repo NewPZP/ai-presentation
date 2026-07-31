@@ -1,0 +1,485 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 12 课 · 多 Agent 委托</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 12 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">多 Agent 委托</h1>
+  <p class="lesson-meta">让主 Agent 把活分给专家 Agent · 约 16 分钟</p>
+</header>
+
+<main>
+
+<h2>单个 Agent 的极限</h2>
+
+<p>
+  到第 11 课为止，你的 Agent 已经很能干了--能查天气、能算数、能检索文档、能流式回答。但随着能力增多，你会撞到一个新问题：<strong>单个 Agent 的系统提示越来越长，工具越来越多，LLM 开始选错工具、忘规则、注意力涣散</strong>。
+</p>
+
+<p>举个具体场景：你做一个企业助手，要支持「查天气 + 查公司 HR 政策 + 查产品文档 + 写代码 + 发邮件」。单个 Agent 会变成这样：</p>
+
+<pre><code>tools = [
+    get_weather, search_hr_docs, search_product_docs,
+    write_code, send_email, calculate, search_calendar, ...
+]  <span class="c"># 20 个工具，LLM 选不过来</span>
+
+system_prompt = <span class="s">"""
+你是企业助手。
+HR 问题用 search_hr_docs，产品问题用 search_product_docs...
+（规则越写越长，LLM 记不住）
+"""</span></code></pre>
+
+<p>
+  这是单 Agent 的天花板：<strong>工具多了，选择准确率下降；规则多了，遵循率下降</strong>。解决方案不是加更多规则，而是<strong>把一个万能 Agent 拆成多个专家 Agent</strong>。
+</p>
+
+<h2>核心模式：Handoff（委托）</h2>
+
+<p>
+  多 Agent 最常见的模式叫 <strong>Handoff（委托）</strong>：一个「主 Agent」（也叫 triage / router）接收用户请求，判断该交给谁，然后<strong>把整个对话移交给目标专家 Agent</strong>。专家处理完后，可以再交回主 Agent。
+</p>
+
+<pre><code>用户：帮我查下北京天气，然后写封邮件告诉老板明天团建改室内
+
+主 Agent（Router）：
+  分析请求 -> 包含「查天气」和「写邮件」两部分
+  
+  步骤 1：委托给「天气专家 Agent」
+    -> 天气专家调 get_weather("北京") -> 返回「晴，25°C」
+    -> 交回主 Agent
+  
+  步骤 2：委托给「邮件专家 Agent」
+    -> 邮件专家用天气结果写邮件 -> 调 send_email
+    -> 交回主 Agent
+  
+  主 Agent：完成，回复用户「邮件已发送」</code></pre>
+
+<p>
+  关键点：用户只和主 Agent 对话，<strong>看不到子 Agent 的存在</strong>。主 Agent 像前台，专家像后台部门--用户找前台，前台把活分派给对应部门。
+</p>
+
+<h2>两种实现方式</h2>
+
+<p>实现多 Agent 有两种主流方式：</p>
+
+<h3>方式 A：用工具调用模拟委托（最简单）</h3>
+
+<p>把每个专家 Agent 包装成一个工具，主 Agent 调用工具时实际是调用了子 Agent：</p>
+
+<pre><code><span class="c"># weather_agent.py - 专家 Agent</span>
+<span class="k">class</span> WeatherAgent:
+    <span class="k">def</span> __init__(self):
+        self.system_prompt = <span class="s">"你是天气专家，只负责查天气和比较天气。"</span>
+        self.tools = [get_weather, calculate]  <span class="c"># 工具少，选择准</span>
+
+    <span class="k">def</span> run(self, query: str) -> str:
+        <span class="s">"""独立完成一个天气相关任务"""</span>
+        <span class="c"># 内部是个完整的 Agent 循环（第 5 课的 WeatherAgent）</span>
+        <span class="c"># 处理完返回最终文本</span>
+        ...
+
+<span class="c"># email_agent.py - 另一个专家</span>
+<span class="k">class</span> EmailAgent:
+    <span class="k">def</span> __init__(self):
+        self.system_prompt = <span class="s">"你是邮件专家，负责起草和发送邮件。"</span>
+        self.tools = [send_email, search_contacts]
+
+    <span class="k">def</span> run(self, query: str) -> str:
+        ...
+
+<span class="c"># main_agent.py - 主 Agent</span>
+weather_agent = WeatherAgent()
+email_agent = EmailAgent()
+
+<span class="c"># 把专家包装成工具</span>
+<span class="k">def</span> delegate_to_weather(query: str) -> str:
+    <span class="s">"""委托给天气专家处理"""</span>
+    <span class="k">return</span> weather_agent.run(query)
+
+<span class="k">def</span> delegate_to_email(query: str) -> str:
+    <span class="s">"""委托给邮件专家处理"""</span>
+    <span class="k">return</span> email_agent.run(query)
+
+main_tools = [
+    {
+        <span class="s">"name"</span>: <span class="s">"delegate_to_weather"</span>,
+        <span class="s">"description"</span>: <span class="s">"把天气相关的问题交给天气专家处理"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"query"</span>]}
+    },
+    {
+        <span class="s">"name"</span>: <span class="s">"delegate_to_email"</span>,
+        <span class="s">"description"</span>: <span class="s">"把邮件相关的问题交给邮件专家处理"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}, <span class="s">"required"</span>: [<span class="s">"query"</span>]}}
+    }
+]
+
+tool_map = {<span class="s">"delegate_to_weather"</span>: delegate_to_weather, <span class="s">"delegate_to_email"</span>: delegate_to_email}
+
+<span class="c"># 主 Agent 的循环和第 5 课一模一样，只是工具变了</span>
+<span class="k">def</span> main_chat(user_input: str) -> str:
+    <span class="c"># ... 标准 Agent 循环</span>
+    <span class="c"># LLM 会调 delegate_to_weather 或 delegate_to_email</span>
+    <span class="c"># 主 Agent 把任务描述传给子 Agent，子 Agent 独立处理完返回结果</span>
+    <span class="c"># 主 Agent 拿到结果后继续（可能再委托或直接回复用户）</span>
+    ...</code></pre>
+
+<p>这个方式的好处：<strong>不用新框架，用前 5 课的知识就能实现</strong>。每个子 Agent 就是一个独立的 <code>WeatherAgent</code> 实例，主 Agent 只是把它们当工具调。</p>
+
+<h3>方式 B：用 OpenAI Agents SDK（原生支持）</h3>
+
+<p>
+  OpenAI 2024 年推出了 <a href="https://github.com/openai/openai-agents-python" target="_blank">Agents SDK</a>，原生支持 Handoff。它把 Agent、工具、委托都抽象成一等公民：
+</p>
+
+<pre><code><span class="k">from</span> agents <span class="k">import</span> Agent, Runner
+
+<span class="c"># 定义专家 Agent</span>
+weather_agent = Agent(
+    name=<span class="s">"天气专家"</span>,
+    instructions=<span class="s">"你只负责天气相关问题，调 get_weather 工具。"</span>,
+    tools=[get_weather_tool],
+)
+
+email_agent = Agent(
+    name=<span class="s">"邮件专家"</span>,
+    instructions=<span class="s">"你只负责邮件起草和发送。"</span>,
+    tools=[send_email_tool],
+)
+
+<span class="c"># 主 Agent，通过 handoffs 声明可以委托给谁</span>
+main_agent = Agent(
+    name=<span class="s">"企业助手"</span>,
+    instructions=<span class="s">"你是企业助手。把天气问题交给天气专家，邮件问题交给邮件专家。"</span>,
+    handoffs=[weather_agent, email_agent],  <span class="c"># ← 关键</span>
+)
+
+<span class="c"># 运行</span>
+result = Runner.run_sync(main_agent, <span class="s">"北京天气怎么样？"</span>)
+print(result.final_output)</code></pre>
+
+<p>
+  Agents SDK 会自动处理委托：主 Agent 判断该交给谁，SDK 把对话上下文转给目标 Agent，目标 Agent 处理完后（可能调工具、可能再委托），把最终结果返回。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>方式 A vs 方式 B 怎么选？</strong> 学习阶段先用方式 A--它让你看透「委托」的本质就是「把子 Agent 当工具调」。理解了之后再用方式 B--SDK 帮你处理了上下文传递、流式、并行委托等细节，生产环境更省事。但<strong>不理解原理直接用 SDK，出问题时你会无从下手</strong>。
+  </p>
+</div>
+
+<h2>关键设计问题</h2>
+
+<h3>1. 怎么切分 Agent？</h3>
+
+<p>不是工具越多越该拆。拆分的依据是：<strong>「这群工具是否共享同一套心智模型和规则」</strong>。</p>
+
+<table>
+  <thead>
+    <tr><th>该拆</th><th>不该拆</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>天气工具 + 邮件工具 + 代码工具（领域差异大）</td>
+      <td>get_weather + calculate + search_weather_news（都是天气领域）</td>
+    </tr>
+    <tr>
+      <td>HR 问答 + 财务问答 + 技术问答（知识源不同）</td>
+      <td>get_weather + format_weather_report + suggest_clothing（一个流程）</td>
+    </tr>
+    <tr>
+      <td>需要不同 system prompt 的能力</td>
+      <td>能用一个 system prompt 覆盖的能力</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>原则：宁少勿多</strong>。两个 Agent 能解决就别拆成五个。每多一个 Agent，就多一层委托的开销（多一次 LLM 调用）、多一个出错点（主 Agent 可能委错）。
+</p>
+
+<h3>2. 主 Agent 怎么决定委托给谁？</h3>
+
+<p>三种策略：</p>
+
+<ol>
+  <li>
+    <strong>LLM 判断</strong>（最常用）：在 system prompt 里描述每个子 Agent 的职责，让 LLM 根据用户问题选。灵活但偶尔选错。
+  </li>
+  <li>
+    <strong>关键词路由</strong>：写 if-else 规则，「天气」-> 天气 Agent，「邮件」-> 邮件 Agent。快、准、但不灵活，新问题没法处理。
+  </li>
+  <li>
+    <strong>分类器路由</strong>：用一个小模型或 embedding 分类，再路由。比 LLM 便宜、比关键词灵活。适合量大场景。
+  </li>
+</ol>
+
+<p>学习阶段用方式 1（LLM 判断）就行，量大了再优化成方式 3。</p>
+
+<h3>3. 上下文怎么传？</h3>
+
+<p>
+  委托时，主 Agent 要把<strong>足够的信息</strong>传给子 Agent，但不能把整个对话历史都倒过去（太贵、太乱）。
+</p>
+
+<p>常见做法：主 Agent 调用委托工具时，把<strong>任务描述</strong>作为参数传给子 Agent。子 Agent 用自己的 system prompt + 任务描述开始独立处理。</p>
+
+<pre><code><span class="c"># 主 Agent 调用委托工具</span>
+delegate_to_email(query=<span class="s">"帮我写邮件告诉老板明天团建改室内，北京今天晴 25 度"</span>)
+
+<span class="c"># 邮件 Agent 收到的是任务描述，不是完整对话历史</span>
+<span class="c"># 它用自己的 system prompt 处理这个任务</span></code></pre>
+
+<p>
+  主 Agent 的职责之一是<strong>把上下文压缩成清晰的任务描述</strong>。这其实是个好事--强制主 Agent 梳理清楚「我要子 Agent 做什么」，而不是把一堆乱七八糟的对话扔过去。
+</p>
+
+<h2>完整示例：三 Agent 协作</h2>
+
+<p>下面是个完整可跑的示例，用方式 A 实现一个「天气 + 邮件 + 计算」三专家协作的助手：</p>
+
+<pre><code><span class="k">from</span> openai <span class="k">import</span> OpenAI
+<span class="k">import</span> json
+
+client = OpenAI()
+
+<span class="c"># ===== 专家 Agent 基类 =====</span>
+<span class="k">class</span> SubAgent:
+    <span class="s">"""一个独立的子 Agent，有自己的 system prompt 和工具"""</span>
+    <span class="k">def</span> __init__(self, system_prompt: str, tools: list, tool_map: dict):
+        self.system_prompt = system_prompt
+        self.tools = tools
+        self.tool_map = tool_map
+
+    <span class="k">def</span> run(self, task: str) -> str:
+        <span class="s">"""处理一个任务，返回最终文本"""</span>
+        messages = [
+            {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: self.system_prompt},
+            {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: task}
+        ]
+        <span class="k">for</span> _ <span class="k">in</span> range(5):  <span class="c"># 最多 5 轮工具调用</span>
+            resp = client.chat.completions.create(
+                model=<span class="s">"gpt-4o-mini"</span>,
+                messages=messages,
+                tools=self.tools,
+            )
+            msg = resp.choices[0].message
+            messages.append(msg)
+            <span class="k">if not</span> msg.tool_calls:
+                <span class="k">return</span> msg.content
+            <span class="k">for</span> tc <span class="k">in</span> msg.tool_calls:
+                args = json.loads(tc.function.arguments)
+                result = self.tool_map[tc.function.name](**args)
+                messages.append({<span class="s">"role"</span>: <span class="s">"tool"</span>, <span class="s">"tool_call_id"</span>: tc.id, <span class="s">"content"</span>: str(result)})
+        <span class="k">return</span> <span class="s">"处理超时"</span>
+
+<span class="c"># ===== 定义三个专家 =====</span>
+<span class="k">def</span> get_weather(city): <span class="k">return</span> {<span class="s">"北京"</span>: <span class="s">"晴 25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云 28°C"</span>}.get(city, <span class="s">"未知"</span>)
+<span class="k">def</span> calculate(expr): <span class="k">return</span> str(eval(expr))
+<span class="k">def</span> send_email(to, subject, body): <span class="k">return</span> <span class="s">f"已发送给 {to}：{subject}"</span>
+
+weather_agent = SubAgent(
+    system_prompt=<span class="s">"你是天气专家。只处理天气查询和比较。回答简洁。"</span>,
+    tools=[{<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"description"</span>: <span class="s">"查城市天气"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"city"</span>]}
+    }}],
+    tool_map={<span class="s">"get_weather"</span>: get_weather}
+)
+
+calc_agent = SubAgent(
+    system_prompt=<span class="s">"你是计算专家。只处理数学计算。"</span>,
+    tools=[{<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"calculate"</span>, <span class="s">"description"</span>: <span class="s">"计算表达式"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"expr"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"expr"</span>]}
+    }}],
+    tool_map={<span class="s">"calculate"</span>: calculate}
+)
+
+email_agent = SubAgent(
+    system_prompt=<span class="s">"你是邮件专家。负责起草和发送邮件。"</span>,
+    tools=[{<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"send_email"</span>, <span class="s">"description"</span>: <span class="s">"发邮件"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {
+            <span class="s">"to"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}, <span class="s">"subject"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}, <span class="s">"body"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}
+        }, <span class="s">"required"</span>: [<span class="s">"to"</span>, <span class="s">"subject"</span>, <span class="s">"body"</span>]}
+    }}],
+    tool_map={<span class="s">"send_email"</span>: send_email}
+)
+
+<span class="c"># ===== 主 Agent =====</span>
+<span class="k">def</span> delegate_weather(query): <span class="k">return</span> weather_agent.run(query)
+<span class="k">def</span> delegate_calc(query): <span class="k">return</span> calc_agent.run(query)
+<span class="k">def</span> delegate_email(query): <span class="k">return</span> email_agent.run(query)
+
+main_tools = [
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {<span class="s">"name"</span>: <span class="s">"delegate_weather"</span>, <span class="s">"description"</span>: <span class="s">"委托天气专家处理天气问题"</span>, <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"query"</span>]}}},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {<span class="s">"name"</span>: <span class="s">"delegate_calc"</span>, <span class="s">"description"</span>: <span class="s">"委托计算专家处理数学问题"</span>, <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"query"</span>]}}},
+    {<span class="s">"type"</span>: <span class="s">"function"</span>, <span class="s">"function"</span>: {<span class="s">"name"</span>: <span class="s">"delegate_email"</span>, <span class="s">"description"</span>: <span class="s">"委托邮件专家处理邮件问题"</span>, <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {<span class="s">"query"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}}, <span class="s">"required"</span>: [<span class="s">"query"</span>]}}},
+]
+
+main_tool_map = {<span class="s">"delegate_weather"</span>: delegate_weather, <span class="s">"delegate_calc"</span>: delegate_calc, <span class="s">"delegate_email"</span>: delegate_email}
+
+<span class="k">def</span> main_chat(user_input: str) -> str:
+    messages = [
+        {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: <span class="s">"你是企业助手。把天气问题交给天气专家，数学问题交给计算专家，邮件问题交给邮件专家。复杂任务可以拆解后多次委托。"</span>},
+        {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input}
+    ]
+    <span class="k">for</span> _ <span class="k">in</span> range(10):
+        resp = client.chat.completions.create(model=<span class="s">"gpt-4o-mini"</span>, messages=messages, tools=main_tools)
+        msg = resp.choices[0].message
+        messages.append(msg)
+        <span class="k">if not</span> msg.tool_calls:
+            <span class="k">return</span> msg.content
+        <span class="k">for</span> tc <span class="k">in</span> msg.tool_calls:
+            print(<span class="s">f"-> 委托: {tc.function.name}({tc.function.arguments})"</span>)
+            args = json.loads(tc.function.arguments)
+            result = main_tool_map[tc.function.name](**args)
+            print(<span class="s">f"<- 结果: {result[:80]}"</span>)
+            messages.append({<span class="s">"role"</span>: <span class="s">"tool"</span>, <span class="s">"tool_call_id"</span>: tc.id, <span class="s">"content"</span>: str(result)})
+    <span class="k">return</span> <span class="s">"处理超时"</span>
+
+<span class="c"># 测试多步委托</span>
+print(main_chat(<span class="s">"查下北京和上海天气，算下两地温差，然后发邮件给 boss@company.com 告诉他结果"</span>))</code></pre>
+
+<p>输出：</p>
+
+<pre><code>-> 委托: delegate_weather({"query": "查询北京和上海的天气"})
+<- 结果: 北京：晴 25°C；上海：多云 28°C
+-> 委托: delegate_calc({"query": "计算 28 - 25"})
+<- 结果: 3
+-> 委托: delegate_email({"query": "发邮件给 boss@company.com，主题：天气对比，正文：北京 25°C，上海 28°C，温差 3 度"})
+<- 结果: 已发送给 boss@company.com：天气对比
+已完成。邮件已发给老板，内容包括两地天气和 3°C 的温差。</code></pre>
+
+<p>
+  看这个执行轨迹--主 Agent 把一个大任务拆成三步，分别委托给三个专家，最后汇总回复用户。这就是多 Agent 协作的核心。
+</p>
+
+<h2>多 Agent 的代价</h2>
+
+<p>多 Agent 不是免费的，它带来三个新成本：</p>
+
+<ol>
+  <li><strong>LLM 调用次数变多</strong>：每次委托都是一次独立的 LLM 调用。上面那个例子调了 4 次 LLM（1 主 + 3 子），单 Agent 可能 2 次就够。</li>
+  <li><strong>延迟变高</strong>：串行委托是累加的。3 个子 Agent 各 2 秒，总延迟 6 秒+。</li>
+  <li><strong>委托可能出错</strong>：主 Agent 可能委错对象，或任务描述写不清，子 Agent 做错。</li>
+</ol>
+
+<div class="callout">
+  <p>
+    <strong>这就是为什么下一课（第 13 课）要讲「何时用 Agent / 何时用 Workflow」</strong>。多 Agent 是个强大的模式，但也是最容易过度使用的。很多人觉得「多 Agent 听起来很厉害」，就什么问题都拆--结果成本翻倍、延迟变高、还没单 Agent 准。先问自己：<strong>单 Agent 真的搞不定吗？</strong>
+  </p>
+</div>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    把上面的三 Agent 示例跑通。然后故意问一个「查天气 + 写代码」的混合问题，看主 Agent 怎么拆解和委托。
+  </li>
+  <li>
+    <strong>对比单 Agent vs 多 Agent</strong>：把三个专家的工具和规则合并到一个单 Agent 里，用第 7 课的评测脚本对比两者的工具选择准确率、回答质量、成本。你会第一次用数据回答「这个场景该不该拆」。
+  </li>
+  <li>
+    <strong>用 OpenAI Agents SDK 重写</strong>：用方式 B（官方 SDK）实现同样的三专家协作。对比代码量、可读性、控制粒度。SDK 帮你省了什么，又限制了你什么？
+  </li>
+  <li>
+    （进阶）<strong>并行委托</strong>：如果两个子任务互不依赖（如「查北京天气」和「查上海天气」），可以并行委托，不串行等待。用 <code>asyncio.gather</code> 或 Agents SDK 的并行能力实现。这是降低延迟的关键技巧。
+  </li>
+</ol>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">多 Agent 委托（Handoff）模式的核心思路是？</p>
+  <ul class="quiz-options">
+    <li>训练多个模型，投票决定答案</li>
+    <li>主 Agent 接收请求后判断该交给谁，把任务委托给专家 Agent 处理，专家处理完交回。每个 Agent 工具少、规则短，选择更准</li>
+    <li>把一个 LLM 调多次，每次问不同问题</li>
+    <li>让用户选要和哪个 Agent 对话</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你做了个多 Agent 系统，但发现「延迟比单 Agent 还高，成本翻倍，准确率没提升」。最可能的原因？</p>
+  <ul class="quiz-options">
+    <li>LLM 太笨，换更贵的模型</li>
+    <li>子 Agent 数量不够，再加几个</li>
+    <li>过度拆分--这个场景本不需要多 Agent。应该先用单 Agent 评测，确认单 Agent 真的搞不定（工具选择准确率低、规则记不住）再拆。拆分要有数据依据，不是「听起来更厉害」</li>
+    <li>网络问题，加机器就行</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  Anthropic 的《Building effective agents》是讲多 Agent 设计模式最清楚的文档，覆盖 Handoff、并行、编排等模式：
+</p>
+
+<p>
+  <strong>👉 <a href="https://www.anthropic.com/research/building-effective-agents" target="_blank">Building effective agents - Anthropic</a></strong>
+</p>
+
+<p>
+  OpenAI Agents SDK 官方仓库，有 Handoff 的完整示例和文档：<a href="https://github.com/openai/openai-agents-python" target="_blank">openai-agents-python</a>
+</p>
+
+<p>
+  Lilian Weng 的《LLM Powered Autonomous Agents》综述，讲了多 Agent 协作的前沿研究：<a href="https://lilianweng.github.io/posts/2023-06-23-agent/" target="_blank">LLM Agents - Lilian Weng</a>
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你已经能做多 Agent 协作系统了。但你会发现一个新问题：<strong>什么时候该用多 Agent？什么时候单 Agent 够？什么时候根本不该用 Agent？</strong> 下一课专门回答这个决策问题。我们会建立一个判断框架，让你面对新需求时能快速决定架构--这是从「会做」到「会选」的关键一跃。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>不知道该不该拆 Agent？委托老出错？子 Agent 之间要共享状态怎么办？把具体场景告诉我。多 Agent 的坑大多在「边界划分」--哪些该一个 Agent 干，哪些该分开。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0011-rag-and-vector-memory.html">第 11 课：RAG 与向量记忆</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'b': '正确。多 Agent 的核心价值是「分而治之」：每个 Agent 只负责一个领域，工具少、规则短，LLM 选择更准、遵循更好。主 Agent 像前台，专家像后台部门，用户只和前台打交道。',
+      'c': '正确。这是多 Agent 最常见的坑：过度拆分。多 Agent 有成本（多次 LLM 调用、延迟累加、委托可能出错），只有当单 Agent 真的搞不定（工具太多选错、规则太长忘规则）时才值得。决策依据是数据（评测准确率），不是直觉。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

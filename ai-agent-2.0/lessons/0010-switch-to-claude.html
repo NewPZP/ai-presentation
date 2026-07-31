@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 10 课 · 切换到 Claude</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 10 课 · AI Agent 2.0 实战</p>
+  <h1 class="lesson-title">切换到 Claude</h1>
+  <p class="lesson-meta">从 OpenAI SDK 到 Anthropic SDK · 约 14 分钟</p>
+</header>
+
+<main>
+
+<h2>为什么要学两个 SDK？</h2>
+
+<p>
+  前 9 课你都用 OpenAI 的 SDK。但做产品时只绑一家是危险的--API 涨价、限流、服务故障、某家模型在某个任务上更好，都可能让你想换。会两家 SDK，你才能根据任务和成本选最合适的。
+</p>
+
+<p>
+  这一课用 <strong>Anthropic 的 Claude</strong> 重写 Agent。Claude 在长上下文、代码理解、工具调用上有自己的特色，和 OpenAI 的 API 设计也略有不同。学完这课你会有一个直觉：<strong>LLM API 的核心概念是相通的，差异在细节</strong>。
+</p>
+
+<blockquote>
+  <p>
+    这也是为什么前 9 课我们坚持用原生 SDK 而不是 LangChain--当你理解了原生 API 的差异，再用框架就是「封装的便利」而不是「黑箱的依赖」。反过来，一上来就用框架，换厂商时就是灾难。
+  </p>
+</blockquote>
+
+<h2>两个 SDK 的核心差异</h2>
+
+<p>先看一张对照表，心里有数：</p>
+
+<table>
+  <thead>
+    <tr><th>概念</th><th>OpenAI</th><th>Anthropic Claude</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>客户端</td>
+      <td><code>from openai import OpenAI</code></td>
+      <td><code>from anthropic import Anthropic</code></td>
+    </tr>
+    <tr>
+      <td>调用方法</td>
+      <td><code>client.chat.completions.create()</code></td>
+      <td><code>client.messages.create()</code></td>
+    </tr>
+    <tr>
+      <td>系统提示</td>
+      <td>放在 <code>messages</code> 里，role 为 <code>"system"</code></td>
+      <td><strong>独立参数</strong> <code>system=</code>，不在 messages 里</td>
+    </tr>
+    <tr>
+      <td>消息格式</td>
+      <td><code>{"role": "user", "content": "文本"}</code></td>
+      <td><code>{"role": "user", "content": [{"type": "text", "text": "文本"}]}</code>（更结构化）</td>
+    </tr>
+    <tr>
+      <td>工具定义</td>
+      <td><code>tools=[{"type": "function", "function": {...}}]</code></td>
+      <td><code>tools=[{"name": ..., "input_schema": ...}]</code>（少一层嵌套）</td>
+    </tr>
+    <tr>
+      <td>工具调用</td>
+      <td>返回 <code>message.tool_calls</code> 列表</td>
+      <td>返回 <code>content</code> 里的 <code>tool_use</code> 块</td>
+    </tr>
+    <tr>
+      <td>工具结果</td>
+      <td>role 为 <code>"tool"</code> 的消息</td>
+      <td>role 为 <code>"user"</code>，content 里放 <code>tool_result</code> 块</td>
+    </tr>
+    <tr>
+      <td>停止原因</td>
+      <td><code>finish_reason: "tool_calls"</code> 或 <code>"stop"</code></td>
+      <td><code>stop_reason: "tool_use"</code> 或 <code>"end_turn"</code></td>
+    </tr>
+    <tr>
+      <td>最大输出</td>
+      <td>由模型决定</td>
+      <td>必须显式传 <code>max_tokens</code> 参数</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  看起来差异很多，但本质都是<strong>把同样的概念用不同的 JSON 结构表达</strong>。下面逐项实现。
+</p>
+
+<h2>第一件事：系统提示的位置变了</h2>
+
+<p>OpenAI 把 system 放在 messages 列表第一项：</p>
+
+<pre><code><span class="c"># OpenAI</span>
+messages = [
+    {<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: <span class="s">"你是天气助手"</span>},
+    {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京天气"</span>}
+]
+resp = client.chat.completions.create(model=..., messages=messages)</code></pre>
+
+<p>Claude 把 system 作为独立参数，不混在 messages 里：</p>
+
+<pre><code><span class="c"># Claude</span>
+messages = [
+    {<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京天气"</span>}
+]
+resp = client.messages.create(
+    model=...,
+    system=<span class="s">"你是天气助手"</span>,  <span class="c"># ← 独立参数</span>
+    messages=messages,
+    max_tokens=1024,  <span class="c"># ← Claude 必填</span>
+)</code></pre>
+
+<div class="callout">
+  <p>
+    <strong>为什么这个差异重要？</strong> 因为它影响你的记忆存储结构。前 9 课的 <code>messages</code> 列表第一项是 system，但切到 Claude 后 messages 里不该有 system。解决方案：<strong>把 system_prompt 作为 Agent 的属性单独存，不放进 messages</strong>。调用时临时拼上去。这是个好的设计习惯，无论用哪家 SDK 都适用。
+  </p>
+</div>
+
+<h2>第二件事：消息内容的结构化</h2>
+
+<p>OpenAI 的 content 是字符串：</p>
+
+<pre><code>{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: <span class="s">"北京天气"</span>}</code></pre>
+
+<p>Claude 的 content 是<strong>块列表</strong>，更结构化：</p>
+
+<pre><code>{<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: [{<span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"北京天气"</span>}]}</code></pre>
+
+<p>
+  看起来繁琐，但好处是能混合多种类型--同一条消息里可以同时有文本、图片、工具结果。Claude 的设计更面向多模态。
+</p>
+
+<p>简单文本可以传字符串，Claude SDK 会自动转成 <code>[{"type": "text", "text": ...}]</code>。但工具结果是块，必须用列表形式。</p>
+
+<h2>第三件事：工具定义和调用</h2>
+
+<p>OpenAI 的工具定义多一层 <code>function</code> 嵌套：</p>
+
+<pre><code><span class="c"># OpenAI</span>
+tools = [{
+    <span class="s">"type"</span>: <span class="s">"function"</span>,
+    <span class="s">"function"</span>: {
+        <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询城市天气"</span>,
+        <span class="s">"parameters"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {...}}
+    }
+}]</code></pre>
+
+<p>Claude 更扁平，用 <code>input_schema</code> 替代 <code>parameters</code>：</p>
+
+<pre><code><span class="c"># Claude</span>
+tools = [{
+    <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+    <span class="s">"description"</span>: <span class="s">"查询城市天气"</span>,
+    <span class="s">"input_schema"</span>: {<span class="s">"type"</span>: <span class="s">"object"</span>, <span class="s">"properties"</span>: {...}}
+}]</code></pre>
+
+<p>工具调用的返回也不同。OpenAI 在 <code>message.tool_calls</code> 里：</p>
+
+<pre><code><span class="c"># OpenAI 返回</span>
+msg.tool_calls = [
+    {<span class="s">"id"</span>: <span class="s">"call_xxx"</span>, <span class="s">"function"</span>: {<span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"arguments"</span>: <span class="s">'{"city":"北京"}'</span>}}
+]</code></pre>
+
+<p>Claude 把工具调用作为 <code>content</code> 里的一个 <code>tool_use</code> 块：</p>
+
+<pre><code><span class="c"># Claude 返回</code>
+msg.content = [
+    {<span class="s">"type"</span>: <span class="s">"text"</span>, <span class="s">"text"</span>: <span class="s">"我来查一下北京天气"</span>},  <span class="c"># 可能有文本</span>
+    {<span class="s">"type"</span>: <span class="s">"tool_use"</span>, <span class="s">"id"</span>: <span class="s">"toolu_xxx"</span>, <span class="s">"name"</span>: <span class="s">"get_weather"</span>, <span class="s">"input"</span>: {<span class="s">"city"</span>: <span class="s">"北京"</span>}}
+]
+msg.stop_reason = <span class="s">"tool_use"</span>  <span class="c"># 而非 "end_turn"</span></code></pre>
+
+<p>
+  注意 Claude 的 <code>input</code> 直接是 dict，不需要 <code>json.loads</code> 解析。这是个体验提升。
+</p>
+
+<h2>第四件事：工具结果的格式</h2>
+
+<p>OpenAI 用 role 为 <code>"tool"</code> 的独立消息：</p>
+
+<pre><code><span class="c"># OpenAI</span>
+messages.append({
+    <span class="s">"role"</span>: <span class="s">"tool"</span>,
+    <span class="s">"tool_call_id"</span>: <span class="s">"call_xxx"</span>,
+    <span class="s">"content"</span>: <span class="s">"晴，25°C"</span>
+})</code></pre>
+
+<p>Claude 把工具结果放在 role 为 <code>"user"</code> 的消息里，content 是 <code>tool_result</code> 块：</p>
+
+<pre><code><span class="c"># Claude</span>
+messages.append({
+    <span class="s">"role"</span>: <span class="s">"user"</span>,
+    <span class="s">"content"</span>: [{
+        <span class="s">"type"</span>: <span class="s">"tool_result"</span>,
+        <span class="s">"tool_use_id"</span>: <span class="s">"toolu_xxx"</span>,
+        <span class="s">"content"</span>: <span class="s">"晴，25°C"</span>
+    }]
+})</code></pre>
+
+<p>
+  这个差异最容易踩坑--Claude 的工具结果消息 role 是 <code>"user"</code> 而不是某个独立的 <code>"tool"</code>。语义上是「用户（代表工具）把结果发给模型」。
+</p>
+
+<h2>完整的 Claude 版 Agent 循环</h2>
+
+<p>把上面四件事拼起来，就是 Claude 版的 Agent：</p>
+
+<pre><code><span class="k">from</span> anthropic <span class="k">import</span> Anthropic
+<span class="k">import</span> json
+
+client = Anthropic()  <span class="c"># 需要 ANTHROPIC_API_KEY 环境变量</span>
+
+SYSTEM_PROMPT = <span class="s">"""你是一个简洁的天气助手。
+规则：
+- 涉及天气的问题，必须先调 get_weather 获取实时数据。
+- 涉及数值计算时，使用 calculate 工具。
+- 回答用中文，不超过两句话。"""</span>
+
+<span class="c"># 工具函数（和 OpenAI 版完全一样）</span>
+<span class="k">def</span> get_weather(city: str) -> str:
+    weather = {<span class="s">"北京"</span>: <span class="s">"晴，25°C"</span>, <span class="s">"上海"</span>: <span class="s">"多云，28°C"</span>, <span class="s">"广州"</span>: <span class="s">"雷阵雨，31°C"</span>}
+    <span class="k">return</span> weather.get(city, <span class="s">"未知"</span>)
+
+<span class="k">def</span> calculate(expression: str) -> str:
+    allowed = set(<span class="s">"0123456789+-*/.() "</span>)
+    <span class="k">if not</span> all(c <span class="k">in</span> allowed <span class="k">for</span> c <span class="k">in</span> expression):
+        <span class="k">raise</span> ValueError(<span class="s">"只支持数字和 + - * /"</span>)
+    <span class="k">return</span> str(eval(expression))
+
+<span class="c"># Claude 工具定义（扁平结构）</span>
+tools = [
+    {
+        <span class="s">"name"</span>: <span class="s">"get_weather"</span>,
+        <span class="s">"description"</span>: <span class="s">"查询某个城市的实时天气"</span>,
+        <span class="s">"input_schema"</span>: {
+            <span class="s">"type"</span>: <span class="s">"object"</span>,
+            <span class="s">"properties"</span>: {<span class="s">"city"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+            <span class="s">"required"</span>: [<span class="s">"city"</span>]
+        }
+    },
+    {
+        <span class="s">"name"</span>: <span class="s">"calculate"</span>,
+        <span class="s">"description"</span>: <span class="s">"计算数学表达式，如 '28 - 25'"</span>,
+        <span class="s">"input_schema"</span>: {
+            <span class="s">"type"</span>: <span class="s">"object"</span>,
+            <span class="s">"properties"</span>: {<span class="s">"expression"</span>: {<span class="s">"type"</span>: <span class="s">"string"</span>}},
+            <span class="s">"required"</span>: [<span class="s">"expression"</span>]
+        }
+    }
+]
+
+tool_map = {<span class="s">"get_weather"</span>: get_weather, <span class="s">"calculate"</span>: calculate}
+
+<span class="c"># Agent 循环</span>
+messages = []
+
+<span class="k">def</span> chat(user_input: str) -> str:
+    messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: user_input})
+
+    <span class="k">while</span> True:
+        resp = client.messages.create(
+            model=<span class="s">"claude-3-5-sonnet-20241022"</span>,  <span class="c"># 或其他 Claude 模型</span>
+            system=SYSTEM_PROMPT,  <span class="c"># ← 独立参数，不进 messages</span>
+            messages=messages,
+            tools=tools,
+            max_tokens=1024,  <span class="c"># ← Claude 必填</span>
+        )
+
+        <span class="c"># 把 assistant 回复存进 messages</span>
+        messages.append({<span class="s">"role"</span>: <span class="s">"assistant"</span>, <span class="s">"content"</span>: resp.content})
+
+        <span class="c"># 判断是否要调工具</span>
+        <span class="k">if</span> resp.stop_reason != <span class="s">"tool_use"</span>:
+            <span class="c"># 不调工具 -> 提取文本返回</span>
+            text_parts = [b.text <span class="k">for</span> b <span class="k">in</span> resp.content <span class="k">if</span> b.type == <span class="s">"text"</span>]
+            <span class="k">return</span> <span class="s">""</span>.join(text_parts)
+
+        <span class="c"># 要调工具 -> 找出所有 tool_use 块，执行，把结果喂回去</span>
+        tool_results = []
+        <span class="k">for</span> block <span class="k">in</span> resp.content:
+            <span class="k">if</span> block.type == <span class="s">"tool_use"</span>:
+                <span class="k">print</span>(<span class="s">f"-> {block.name}({block.input})"</span>)
+                <span class="k">try</span>:
+                    result = tool_map[block.name](**block.input)
+                <span class="k">except</span> Exception <span class="k">as</span> e:
+                    result = <span class="s">f"工具执行失败：{e}"</span>
+
+                tool_results.append({
+                    <span class="s">"type"</span>: <span class="s">"tool_result"</span>,
+                    <span class="s">"tool_use_id"</span>: block.id,
+                    <span class="s">"content"</span>: str(result)
+                })
+
+        <span class="c"># 工具结果作为 user 消息喂回去</span>
+        messages.append({<span class="s">"role"</span>: <span class="s">"user"</span>, <span class="s">"content"</span>: tool_results})
+
+<span class="c"># 测试</span>
+<span class="k">print</span>(chat(<span class="s">"北京和上海今天哪个更热？"</span>))</code></pre>
+
+<p>输出和 OpenAI 版几乎一样：</p>
+
+<pre><code>-> get_weather({'city': '北京'})
+-> get_weather({'city': '上海'})
+上海更热，28°C 比北京的 25°C 高 3 度。</code></pre>
+
+<h2>关键差异的工程影响</h2>
+
+<h3>1. system_prompt 要从 messages 里抽出来</h3>
+
+<p>
+  前 9 课的 <code>messages</code> 列表第一项是 system 消息。切到 Claude 后不能这样--system 是独立参数。好的设计是：<strong>把 system_prompt 作为 Agent 的属性单独存，调用时拼到 Claude 的 system 参数或 OpenAI 的 messages[0]</strong>。
+</p>
+
+<pre><code><span class="k">class</span> WeatherAgent:
+    <span class="k">def</span> __init__(self, system_prompt, llm_backend, ...):
+        self.system_prompt = system_prompt  <span class="c"># 单独存</span>
+        self.llm_backend = llm_backend  <span class="c"># "openai" 或 "claude"</span>
+        self.messages = []  <span class="c"># 不含 system</span>
+
+    <span class="k">def</span> chat(self, user_input):
+        <span class="k">if</span> self.llm_backend == <span class="s">"openai"</span>:
+            <span class="c"># 调用时把 system 塞到 messages 最前</span>
+            msgs = [{<span class="s">"role"</span>: <span class="s">"system"</span>, <span class="s">"content"</span>: self.system_prompt}] + self.messages
+            <span class="c"># ... OpenAI 调用逻辑</span>
+        <span class="k">else</span>:
+            <span class="c"># Claude: system 作为独立参数</span>
+            resp = client.messages.create(
+                system=self.system_prompt,
+                messages=self.messages,
+                <span class="c"># ...</span>
+            )</code></pre>
+
+<p>这样换厂商时，<code>self.messages</code> 的结构不用变，只改调用逻辑。</p>
+
+<h3>2. Claude 的 <code>input</code> 直接是 dict，不用 json.loads</h3>
+
+<p>
+  OpenAI 的 <code>arguments</code> 是 JSON 字符串，要 <code>json.loads(call.function.arguments)</code> 才能用。Claude 的 <code>input</code> 直接是 dict，<code>block.input</code> 就能用。这是个体验提升，少一层解析就少一个出错点。
+</p>
+
+<h3>3. Claude 必须传 <code>max_tokens</code></h3>
+
+<p>
+  OpenAI 的 max_tokens 是可选的（默认拿模型最大值）。Claude <strong>必填</strong>，不传会报错。这个差异容易让第一次切 Claude 的人懵--代码看着对，跑起来就 400。
+</p>
+
+<h2>何时该用 Claude？</h2>
+
+<p>不是无脑换，要根据任务选。几家经验性观察（会随模型更新变化）：</p>
+
+<table>
+  <thead>
+    <tr><th>场景</th><th>倾向</th><th>理由</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>长文档分析（10万+ token）</td>
+      <td>Claude</td>
+      <td>长上下文窗口大，且在长文上表现稳定</td>
+    </tr>
+    <tr>
+      <td>代码生成、代码理解</td>
+      <td>都行，Claude 略优</td>
+      <td>Claude 在代码任务上评测分数通常更高</td>
+    </tr>
+    <tr>
+      <td>工具调用密集的场景</td>
+      <td>都行</td>
+      <td>两家都支持原生 tool calling，Claude 的 input 直接是 dict 略方便</td>
+    </tr>
+    <tr>
+      <td>多语言（中文）</td>
+      <td>都行</td>
+      <td>两家中文都不错，Claude 语气更克制</td>
+    </tr>
+    <tr>
+      <td>成本敏感</td>
+      <td>看具体模型</td>
+      <td>Haiku 便宜，gpt-4o-mini 也便宜。要对比两家的小模型</td>
+    </tr>
+    <tr>
+      <td>需要 function calling 生态</td>
+      <td>OpenAI 略优</td>
+      <td>第三方工具、教程更多</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>别陷入「哪家更强」的争论</strong>。正确姿势是：用第 7 课的评测框架，针对你的具体任务跑同一套用例，对比两家的准确率、延迟、成本。数据说话比信仰靠谱。
+  </p>
+</div>
+
+<h2>动手实验</h2>
+
+<ol>
+  <li>
+    申请 Anthropic API Key（<a href="https://console.anthropic.com/" target="_blank">console.anthropic.com</a>），把上面的 Claude 版 Agent 跑通。确认能查天气、能多步推理。
+  </li>
+  <li>
+    <strong>对比评测</strong>：用第 7 课的评测脚本，对同一套测试用例分别跑 OpenAI 和 Claude 版，对比工具选择准确率和回答平均分。你会第一次用数据回答「这家比那家好在哪」。
+  </li>
+  <li>
+    <strong>抽象 LLM 后端</strong>：把 <code>WeatherAgent</code> 改造成支持 <code>backend="openai"</code> 或 <code>backend="claude"</code>，构造时选择。这是个有价值的重构--让换厂商变成传个参数的事，而不是改一堆代码。
+  </li>
+  <li>
+    <strong>混合使用</strong>：进阶玩法--Agent 主循环用 Claude（长上下文、工具调用稳），但 LLM 裁判用 gpt-4o-mini（便宜）。这种「不同任务用不同模型」的混合策略在生产里很常见。
+  </li>
+</ol>
+
+<h2>小测验</h2>
+
+<div class="quiz" data-correct="c">
+  <p class="quiz-title">检查你的理解</p>
+  <p class="quiz-question">从 OpenAI 切到 Claude 时，系统提示（system prompt）的处理有什么不同？</p>
+  <ul class="quiz-options">
+    <li>没区别，都放在 messages 列表第一项</li>
+    <li>Claude 不支持系统提示，只能写在 user 消息里</li>
+    <li>Claude 的 system 是独立参数，不放进 messages；OpenAI 是 messages 里 role="system" 的项。好的设计是单独存 system_prompt，调用时按 SDK 拼接</li>
+    <li>Claude 的系统提示必须用英文</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<div class="quiz" data-correct="b">
+  <p class="quiz-title">应用一下</p>
+  <p class="quiz-question">你切到 Claude 后，Agent 跑起来报错 <code>"max_tokens is required"</code>。原因和解决？</p>
+  <ul class="quiz-options">
+    <li>Claude 模型坏了，等官方修复</li>
+    <li>Claude 的 API 必填 max_tokens 参数（OpenAI 是可选的）。在 messages.create() 里加上 max_tokens=1024（或适合你任务的值）即可</li>
+    <li>API Key 没权限，需要升级套餐</li>
+    <li>网络问题，重试就行</li>
+  </ul>
+  <div class="quiz-feedback"></div>
+</div>
+
+<h2>主源推荐</h2>
+
+<p>
+  Anthropic 官方文档对 tool use 讲得最清楚，含完整示例和工具结果格式：
+</p>
+
+<p>
+  <strong>👉 <a href="https://docs.anthropic.com/en/docs/build-with-claude/tool-use" target="_blank">Tool Use - Anthropic Docs</a></strong>
+</p>
+
+<p>
+  Anthropic 的 Python SDK 仓库，有大量示例：<a href="https://github.com/anthropics/anthropic-sdk-python" target="_blank">anthropic-sdk-python</a>
+</p>
+
+<p>
+  想深入理解两家模型的能力差异，可以看 <a href="https://www.anthropic.com/news/claude-3-5-sonnet" target="_blank">Claude 3.5 Sonnet 发布说明</a> 和 <a href="https://openai.com/index/gpt-4o/" target="_blank">GPT-4o 技术报告</a>，对照它们的评测维度。
+</p>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>下一步</h4>
+    <p>到这里你已经是「双语」Agent 工程师了--OpenAI 和 Claude 都能上手。下一课进入进阶阶段：<strong>RAG 与向量记忆</strong>。当对话历史长到 messages 装不下、或者 Agent 需要查询大量外部知识时，向量检索是标准方案。我们会做一个最小可用的 RAG，让你理解 embedding、向量库、检索增强这些概念到底在干什么。</p>
+  </section>
+  <section>
+    <h4>有问题随时问我</h4>
+    <p>切 Claude 后报错？两家行为不一样不知道为啥？想做一个支持运行时切换后端的 Agent？把场景告诉我，我帮你设计抽象层。</p>
+  </section>
+  <section>
+    <h4>回顾</h4>
+    <p>← <a href="./0009-production-deployment.html">第 9 课：生产化部署</a></p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const correct = quiz.dataset.correct;
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const explanations = {
+      'c': '正确。这个差异看似小，但影响记忆存储结构。好的设计是 system_prompt 作为 Agent 属性单独存，messages 里只放对话。调用时按 SDK 拼接--OpenAI 时塞到 messages[0]，Claude 时传给 system 参数。这样换厂商时 messages 不用改。',
+      'b': '正确。这是 OpenAI 转 Claude 最常见的第一个坑。OpenAI 的 max_tokens 可选（默认拿模型最大），Claude 必填。加一行 max_tokens=1024 就行。值要根据任务定：天气助手 1024 够，长文生成可能要 4096+。'
+    };
+    options.forEach((opt, i) => {
+      const letter = String.fromCharCode(97 + i);
+      opt.addEventListener('click', () => {
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (letter === correct) {
+          opt.classList.add('correct');
+          feedback.innerHTML = '✓ ' + (explanations[correct] || '正确。');
+        } else {
+          opt.classList.add('wrong');
+          feedback.innerHTML = '✗ ' + (explanations[correct] || '再想想。') + '（正确答案是 ' + correct.toUpperCase() + '）';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>
