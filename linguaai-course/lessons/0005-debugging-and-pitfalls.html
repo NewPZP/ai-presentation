@@ -1,0 +1,152 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 4 课 · 踩坑与调试 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 5 课 / 共 8 课 · <a href="./0004-implementation-loop.html">上一课</a></span>
+    <h1 class="lesson-title">踩坑与调试：用反馈回路把 bug 逼到死角</h1>
+    <p class="lesson-meta">预计 15 分钟 · 基于真实 SKILL.md（diagnosing-bugs）+ 本工程真实 bug · 目标：遇到 bug 时不再「盯着代码猜」，而是先建一条会红的回路</p>
+  </header>
+
+  <h2>这节课的终点</h2>
+  <p>实现循环不是永远一帆风顺。当测试红了却不知道为什么、当 Agent 改了 A 坏了 B，<code>diagnosing-bugs</code> skill 提供一套<strong>反直觉但极其有效</strong>的调试纪律。</p>
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p><strong>建一条会红的回路，bug 就修好了 90%。</strong>盯着代码猜是最没用的事——先有一条「能复现这个 bug、几秒跑完、可无人值守」的命令，再谈假设。</p>
+  </div>
+
+  <h2>diagnosing-bugs 的六阶段</h2>
+  <table>
+    <thead><tr><th>阶段</th><th>做什么</th></tr></thead>
+    <tbody>
+      <tr><td>1. 建反馈回路</td><td>造一个能复现 bug 的命令（测试/curl/脚本），红、快、确定、可无人值守</td></tr>
+      <tr><td>2. 复现 + 最小化</td><td>确认它复现的是用户说的那个 bug，然后砍到最小</td></tr>
+      <tr><td>3. 提假设</td><td>列 3–5 个可证伪的假设，排好序再测</td></tr>
+      <tr><td>4. 探针验证</td><td>一次改一个变量，用日志/调试器验证预测</td></tr>
+      <tr><td>5. 修复 + 回归测试</td><td>先写回归测试再修；没有合适的 seam 本身就是发现</td></tr>
+      <tr><td>6. 清理 + 复盘</td><td>删调试日志、删临时原型、在 commit 里写清真正原因</td></tr>
+    </tbody>
+  </table>
+
+  <h2>Phase 1 是整个 skill 的灵魂</h2>
+  <p>skill 原文：<em>「This is the skill. Everything else is mechanical.」</em></p>
+  <p>反馈回路的构造方式（按优先级）：失败测试 → curl/HTTP 脚本 → CLI + 快照 diff → 无头浏览器脚本 → 重放捕获的 trace → 临时 harness → fuzz/property → git bisect → 差异对比 → 最后才是人肉点击。</p>
+  <p><strong>没有红能力的命令，不许进 Phase 2。</strong>如果忍不住开始读代码建假设，停下来——这正是这个 skill 要防止的失败模式。</p>
+  <p>回路造好后还要<strong>收紧</strong>：更快、信号更锐（断言具体症状而非「没崩」）、更确定（固定时间/种子/网络）。一个 30 秒的 flaky 回路几乎等于没有；一个 2 秒的确定性回路是调试超能力。</p>
+
+  <h2>本工程真实踩过的坑</h2>
+
+  <h3>坑一：浏览器 CORS 拦截 AI 接口</h3>
+  <p><strong>现象</strong>：从 localhost 直接调 OpenAI 兼容接口被浏览器 CORS 策略拦死。</p>
+  <p><strong>回路</strong>：一条 curl 命令直连接口 200，但浏览器 fetch 报 CORS——差异本身就是诊断线索。</p>
+  <p><strong>根因</strong>：浏览器同源策略，不是接口问题。</p>
+  <p><strong>修复</strong>：开发模式走 Vite dev server proxy（<code>/dev-proxy</code>），由服务端转发请求绕过 CORS。这条教训进了项目记忆，后续所有 AI 调用都遵守。</p>
+
+  <h3>坑二：火山 TTS 资源 ID 格式</h3>
+  <p><strong>现象</strong>：TTS 接口返回错误，但 HTTP 状态是 200+ 的 JSON 错误体。</p>
+  <p><strong>回路</strong>：用最短文本「Hi.」做端到端最小验证（火山没有 <code>/models</code> 端点可探测）。</p>
+  <p><strong>根因</strong>：资源 ID 必须用 <code>volc.seedicl.default</code> 格式，不是模型名 <code>seed-icl-2.0</code>。</p>
+  <p><strong>修复</strong>：适配器里硬编码正确格式；错误处理覆盖 200+ JSON error 类型；文本按 500 字符切块请求。</p>
+
+  <h3>坑三：工厂函数引用不稳定导致 effect 反复执行</h3>
+  <p><strong>现象</strong>：音频播放/测验生成的 effect 在每次渲染都重新触发，状态错乱。</p>
+  <p><strong>回路</strong>：页面级测试里观察到 effect 调用次数异常。</p>
+  <p><strong>根因</strong>：<code>createAudio</code>、测验生成等工厂函数每次渲染返回新引用，作为 effect 依赖导致重复执行。</p>
+  <p><strong>修复</strong>：用 <code>useMemo</code> 稳定工厂引用。这条也进了项目记忆。</p>
+
+  <h3>坑四：mock 时间线与真实 TTS 时长冲突</h3>
+  <p><strong>现象</strong>：mock 句子时间线固定 51 秒，但真实 TTS 短文本只有 ~2 秒，播放定位全错。</p>
+  <p><strong>修复</strong>：<code>fitSentencesToDuration</code> 把时间线按真实 TTS 时长等比缩放。</p>
+
+  <div class="callout">
+    <span class="callout-title">这些坑的共同点</span>
+    <p>它们都<strong>不是靠「盯着代码想」解决的</strong>，而是靠一条具体的反馈回路（curl 差异、端到端最小验证、effect 计数测试）把根因逼出来的。这就是 diagnosing-bugs 的核心：<strong>用回路代替猜测</strong>。</p>
+  </div>
+
+  <h2>把教训沉淀进项目记忆</h2>
+  <p>本工程的一个关键习惯：每修好一个坑，就把「现象 → 根因 → 修复」记进项目记忆。后续会话开头 Agent 会自动加载这些记忆，<strong>同样的坑不会踩第二次</strong>。</p>
+  <p>项目记忆里的硬约束（节选）：</p>
+  <ul>
+    <li>开发环境必须用 Vite proxy <code>/dev-proxy</code> 绕过 CORS</li>
+    <li>火山 TTS 资源 ID 用 <code>volc.seedicl.default</code></li>
+    <li>工厂函数引用用 <code>useMemo</code> 稳定</li>
+    <li>所有 middleware 用 async/await，不用 callback</li>
+  </ul>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>读 <code>.agents/skills/diagnosing-bugs/SKILL.md</code> 的 Phase 1，问自己：上一次你调试一个 bug 时，有没有先建回路？还是直接开始读代码？</li>
+      <li>打开本仓库项目记忆 <code>~/.trae-cn/memory/projects/-Users-panzhipiao-workspace-learn-english-with-ai--p2-c43adedce6cbb3a3746d/project_memory.md</code>，看「Lessons Learned」一节，体会「踩坑 → 记忆 → 不重踩」的闭环。</li>
+      <li>思考题：如果一个 bug 你实在造不出回路（比如只在用户机器上出现），diagnosing-bugs 建议你怎么做？（提示：Phase 1 末尾）</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong><code>.agents/skills/diagnosing-bugs/SKILL.md</code> + 项目记忆的 Lessons Learned。</p>
+    <p>下一课预告：<strong>第 6 课 · 技术实现</strong>——前面的课都在讲方法，这节课换个视角，用架构视角浓缩讲一遍 LinguaAI 是怎么搭起来的（只讲思路，不讲代码）。</p>
+    <a class="next-lesson" href="./0006-technical-architecture.html">继续第 6 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: 'diagnosing-bugs 的哪个阶段被称为「整个 skill 的灵魂」？',
+        options: [
+          'Phase 1 建反馈回路',
+          'Phase 3 提假设',
+          'Phase 5 修复',
+          'Phase 6 复盘',
+        ],
+        answer: 0,
+        explain: '原文："This is the skill. Everything else is mechanical." 有了一条红、快、确定、可无人值守的回路，bug 就修好了 90%。没有回路不许进下一阶段。',
+      },
+      {
+        q: '反馈回路的四个验收标准是？',
+        options: [
+          '红能力、确定性、快、可无人值守',
+          '覆盖率高、断言多、日志全、速度快',
+          '能编译、能运行、能部署、能回滚',
+          '单元、集成、端到端、性能',
+        ],
+        answer: 0,
+        explain: '红能力（能捕获这个特定 bug）、确定性（每次结果一致）、快（秒级）、Agent 可无人值守运行。缺一个都不算 tight loop。',
+      },
+      {
+        q: '本工程火山 TTS bug 的根因是？',
+        options: [
+          '资源 ID 格式用错（应用 volc.seedicl.default）',
+          'API Key 过期',
+          '网络不通',
+          '文本过长被截断',
+        ],
+        answer: 0,
+        explain: '资源 ID 必须用 volc.seedicl.default 格式，不是模型名 seed-icl-2.0。火山没有 /models 端点，需用最短文本「Hi.」做端到端最小验证。',
+      },
+      {
+        q: '工厂函数引用不稳定导致 effect 反复执行，修复方式是？',
+        options: [
+          '用 useMemo 稳定引用',
+          '把函数移到组件外',
+          '禁用 React 严格模式',
+          '用 setTimeout 延迟执行',
+        ],
+        answer: 0,
+        explain: '工厂函数每次渲染返回新引用，作为 effect 依赖导致重复执行。用 useMemo 稳定引用即可。这条教训已进项目记忆。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

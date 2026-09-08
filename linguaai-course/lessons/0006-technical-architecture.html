@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 5 课 · 技术实现 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 6 课 / 共 8 课 · <a href="./0005-debugging-and-pitfalls.html">上一课</a></span>
+    <h1 class="lesson-title">技术实现：LinguaAI 的架构浓缩</h1>
+    <p class="lesson-meta">预计 12 分钟 · 只讲架构思路，不讲代码细节 · 目标：理解这个应用「为什么这么搭」，而不是「怎么写」</p>
+  </header>
+
+  <h2>为什么要加这节课</h2>
+  <p>前四课都在讲<strong>方法</strong>（怎么用 Agent 和 Skill）。这节课换个视角：用 LinguaAI 当案例，看看一个真实应用的架构长什么样，以及<strong>哪些架构决策让 Agent 协作更顺畅</strong>。</p>
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p><strong>把逻辑写成纯函数、把外部依赖藏在适配器后面、把状态塞进 localStorage</strong>——这三件事让 Agent 能放心地改代码而不牵一发动全身。</p>
+  </div>
+
+  <h2>整体结构：两块</h2>
+  <pre><code>learn_english_with_ai/
+├── app/      React + Vite + TypeScript 前端（浏览器里跑）
+└── worker/   Cloudflare Worker（TED 数据后端，绕过 CORS）</code></pre>
+  <p>为什么分两块？因为浏览器直接抓 TED 的 RSS 会被 CORS 拦。Worker 做了三件事：抓 RSS、清洗 transcript、带日缓存返回。前端只管调 <code>/api/channels/...</code>。</p>
+
+  <h2>前端三层：页面 · 组件 · 领域逻辑</h2>
+  <table>
+    <thead><tr><th>层</th><th>位置</th><th>职责</th></tr></thead>
+    <tbody>
+      <tr><td>页面</td><td><code>pages/</code></td><td>每个功能一页（文章列表、导入、单词预览、播客、发现…）</td></tr>
+      <tr><td>通用组件</td><td><code>components/</code></td><td>侧边栏、顶栏、配置面板等跨页复用</td></tr>
+      <tr><td>领域逻辑</td><td><code>lib/</code></td><td>纯函数 + 少量 hooks，不依赖 React</td></tr>
+    </tbody>
+  </table>
+  <p>关键设计：<strong>领域逻辑尽量写成纯函数</strong>（<code>articles.ts</code>、<code>processing/pipeline.ts</code>、<code>pdf/parse.ts</code>、<code>listening/quiz.ts</code>…）。纯函数的好处是<strong>好测</strong>——给定输入必有输出，不用 mock 整个 React 树。这正是 tdd skill 能高效工作的前提。</p>
+
+  <h2>核心数据流</h2>
+  <pre><code>导入文本 → saveArticle() → Article（processing 为空）
+    ↓
+AI 预处理（getTextAdapter().extractWords/Phrases/Sentences）
+    ↓
+attachProcessing() → Article.processing { words, phrases, sentences, audio }
+    ↓
+后续页面消费 processing：
+  - 单词预览页 → words / phrases
+  - 播客页     → sentences + audio（TTS）</code></pre>
+  <p>Article 是整个应用的核心数据模型，所有页面都围绕它转。<code>processing</code> 字段是 AI 的产物，缺失时页面会引导用户去加工。</p>
+
+  <h2>AI 适配器层：mock 先行的典范</h2>
+  <p><code>lib/ai/index.ts</code> 提供 <code>getTextAdapter()</code> / <code>getVoiceAdapter()</code> 两个工厂函数，调用方只依赖接口，不感知 mock/真实：</p>
+  <ul>
+    <li><strong>mock 模式</strong>：返回固定测试数据，无需网络、不花钱</li>
+    <li><strong>real 模式</strong>：有 API Key → 真实适配器（OpenAI 兼容文字 + 火山 TTS 语音）；缺 Key → 回落 mock</li>
+  </ul>
+  <div class="callout">
+    <span class="callout-title">为什么 mock 先行</span>
+    <p>第 1 课讲过：让 AI 功能在不花钱的情况下先跑通全链路、先写测试。接真实模型时只是替换一个开关，<strong>测试一行不改</strong>。这就是适配器模式的威力——把「变化的供应商」和「稳定的接口」隔开。</p>
+  </div>
+
+  <h2>音频引擎：一个 hook 管所有播放</h2>
+  <p><code>lib/audio/useSentencePlayer.ts</code> 是个自定义 hook，封装了：加载音频、按句子定位播放、控制语速、循环模式。页面只需调用它暴露的状态和方法，不用直接碰 <code>audio</code> 元素。</p>
+  <p>这个抽象让「单句播放」「连读」「逐句精听」都复用同一套逻辑，测试也集中在一个地方。</p>
+
+  <h2>PDF 解析：纯函数 + 严格校验</h2>
+  <p><code>lib/pdf/parse.ts</code> 用 pdf.js 解析文本，然后做三件事：去页眉页脚、三种版式检测、按标题切分文章。双语模式下严格对齐中英文句子数。</p>
+  <p>关键决策：<strong>只存英文正文，译文放 <code>sentences[].translation</code></strong>——避免数据冗余，也让后续处理统一。</p>
+
+  <h2>持久化：localStorage 就够了</h2>
+  <p>整个应用没有后端数据库。文章、配置、学习进度全部存 <code>localStorage</code>。对一个桌面版个人学习应用来说，这是<strong>最简单也最可靠</strong>的选择——零运维、离线可用。</p>
+
+  <h2>测试布局</h2>
+  <p>测试文件与源文件同名（<code>foo.ts</code> → <code>foo.test.ts</code>），工具函数配单测，页面配 <code>@testing-library/react</code> 测试。全工程 370+ 测试，大部分跑在纯函数上——快、稳、不 flaky。</p>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>打开 <code>app/src/lib/</code>，数一数有多少 <code>.test.ts</code>。问：为什么纯函数多的地方测试也多？</li>
+      <li>读 <code>app/src/lib/ai/index.ts</code>，理解工厂函数的路由逻辑——它怎么决定返回 mock 还是 real？</li>
+      <li>看 <code>app/src/routes.ts</code> 和 <code>App.tsx</code>，理解路由是怎么组织的（提示：常量唯一来源）。</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong><a href="https://github.com/NewPZP/learn_english_with_ai">README.md</a> + <code>app/src/lib/</code> 目录（架构的核心都在这）。</p>
+    <p>下一课预告：<strong>第 7 课 · 元课程</strong>——跳出 LinguaAI，讲讲你现在正在读的这套教程本身：teach skill 是怎么从 MISSION/NOTES 一步步生成每一课 HTML 的。</p>
+    <a class="next-lesson" href="./0007-meta-how-this-course-was-made.html">继续第 7 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: 'LinguaAI 前端领域逻辑的核心设计原则是？',
+        options: [
+          '尽量写成纯函数，不依赖 React',
+          '全部塞进组件里',
+          '用 class 组件管理状态',
+          '依赖全局变量共享数据',
+        ],
+        answer: 0,
+        explain: '纯函数给定输入必有输出，好测、好改、不牵一发动全身。这是 tdd skill 能高效工作的前提。',
+      },
+      {
+        q: 'AI 适配器层用 mock 先行模式的最大好处是？',
+        options: [
+          '不花钱就能跑通全链路、先写测试，接真实模型时只换开关',
+          '运行速度更快',
+          '不需要写测试',
+          '可以跳过 AI 配置页',
+        ],
+        answer: 0,
+        explain: 'mock 让 AI 功能在无网络、不花钱的情况下先跑通、先写测试。接真实模型时只替换工厂函数的返回值，测试一行不改。',
+      },
+      {
+        q: 'LinguaAI 的数据持久化方案是？',
+        options: [
+          'localStorage',
+          'MySQL 数据库',
+          'Redis 缓存',
+          '云端同步服务',
+        ],
+        answer: 0,
+        explain: '对桌面版个人学习应用，localStorage 是最简单可靠的选择：零运维、离线可用。文章、配置、进度全部存在浏览器本地。',
+      },
+      {
+        q: 'Cloudflare Worker 在本工程中的作用是？',
+        options: [
+          '抓取 TED RSS 并清洗 transcript，绕过浏览器 CORS',
+          '存储用户数据',
+          '做 AI 推理',
+          '托管前端静态资源',
+        ],
+        answer: 0,
+        explain: '浏览器直接抓 TED RSS 会被 CORS 拦。Worker 做中间层：抓 RSS、清洗 transcript、带日缓存返回。前端只调 /api/channels/...。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

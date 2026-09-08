@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 3 课 · 实现循环 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 4 课 / 共 8 课 · <a href="./0003-requirements.html">上一课</a></span>
+    <h1 class="lesson-title">实现循环：从一张工单到一次干净的提交</h1>
+    <p class="lesson-meta">预计 15 分钟 · 基于真实 SKILL.md（implement / tdd / code-review）· 目标：跑通「读工单 → 测试先行 → 实现 → 审查 → 提交」的完整循环</p>
+  </header>
+
+  <h2>这节课的终点</h2>
+  <p>第 2 课结束时你有了一张 <code>ready-for-agent</code> 的工单。这节课结束时，它会变成 <strong>一次已提交、已审查、测试全绿的 git commit</strong>。</p>
+  <pre><code>工单（ready-for-agent）
+   ↓ implement
+   ├─ 读工单 + 确认 seams（测试边界）
+   ├─ /tdd：红 → 绿，一个垂直切片一个切片地推进
+   ├─ 定期类型检查 + 单测
+   ├─ 收尾跑全量测试
+   ├─ /code-review：双轴审查（Standards + Spec）
+   └─ 提交
+结果：一次干净的 commit，工单可关闭</code></pre>
+
+  <div class="callout">
+    <span class="callout-title">一句话记住实现循环</span>
+    <p><strong>先写会失败的测试，再写刚好让它通过的代码，最后让一个独立的审查者挑刺。</strong>「红→绿→审查」三步，比「想到啥写啥」可靠得多。</p>
+  </div>
+
+  <h2>implement：循环的指挥者</h2>
+  <p><code>implement</code> 本身很短——它不写代码，它只<strong>编排循环</strong>：</p>
+  <ol>
+    <li>读 spec 或工单</li>
+    <li>用 <code>/tdd</code> 在<strong>事先约定的 seams</strong> 上测试先行</li>
+    <li>定期跑类型检查、单文件测试</li>
+    <li>收尾跑一次全量测试</li>
+    <li>用 <code>/code-review</code> 审查</li>
+    <li>提交</li>
+  </ol>
+  <p>它的价值不在「能写代码」，而在<strong>强制按节奏走</strong>：测试不先写就不许实现、不审查就不许提交。这正是「管理初级工程师」的体现——你给它 SOP，它按 SOP 执行。</p>
+
+  <h2>tdd：红 → 绿，一次一个垂直切片</h2>
+
+  <h3>Seam：先约定测试边界</h3>
+  <p>TDD 的第一步不是写测试，而是<strong>先和你确认 seam（接缝）</strong>——也就是「在哪个公共接口上测」。</p>
+  <div class="callout">
+    <span class="callout-title">为什么 seam 要先确认</span>
+    <p>测试只该打在<strong>公共边界</strong>上，不该伸进内部实现。如果不先约定 seam，Agent 可能去测私有方法、mock 内部协作者——这种测试一重构就碎，等于白写。所以 tdd skill 的第一动作是问你：「公共接口是什么？哪些 seam 该测？」</p>
+  </div>
+
+  <h3>红 → 绿循环</h3>
+  <ul>
+    <li><strong>红</strong>：先写一个会失败的测试（断言来自独立的事实源——已知字面量、手算例子、spec，不是从实现反推）</li>
+    <li><strong>绿</strong>：只写刚好让它通过的代码，不预判未来、不加 speculative 功能</li>
+    <li><strong>一次一个垂直切片</strong>：一个 seam、一个测试、一点实现，然后重复</li>
+  </ul>
+
+  <h3>三个反模式（考试重点）</h3>
+  <table>
+    <thead><tr><th>反模式</th><th>特征</th><th>正确做法</th></tr></thead>
+    <tbody>
+      <tr><td>实现耦合</td><td>mock 内部协作者、测私有方法</td><td>只测公共接口行为</td></tr>
+      <tr><td>同义反复</td><td>断言用和实现一样的算法重算期望值</td><td>期望值来自独立来源（spec/手算）</td></tr>
+      <tr><td>水平切片</td><td>先把所有测试写完再写实现</td><td>一个测试 → 一点实现，垂直推进</td></tr>
+    </tbody>
+  </table>
+  <p>注意：<strong>重构不属于红绿循环</strong>，它属于 review 阶段——别在实现时顺手优化。</p>
+
+  <h2>code-review：双轴审查，不让一轴掩盖另一轴</h2>
+  <p>提交前最后一关。<code>code-review</code> 沿<strong>两条独立轴</strong>并行审查：</p>
+  <table>
+    <thead><tr><th>轴</th><th>问的问题</th></tr></thead>
+    <tbody>
+      <tr><td><strong>Standards 规范</strong></td><td>代码符合仓库的编码规范吗？（外加 Fowler 代码坏味道基线）</td></tr>
+      <tr><td><strong>Spec 需求</strong></td><td>代码忠实实现了工单/PRD 要求的东西吗？有没有漏做或多做？</td></tr>
+    </tbody>
+  </table>
+  <div class="callout">
+    <span class="callout-title">为什么是两个独立的轴</span>
+    <p>因为一个改动可以<strong>过一轴挂一轴</strong>：代码很规范但做错了事（Spec 挂），或者做对了事但违反约定（Standards 挂）。两条轴用<strong>并行子代理</strong>跑、<strong>并列汇报</strong>，就是为了不让一轴的「通过」掩盖另一轴的「失败」。</p>
+  </div>
+  <p>Standards 轴除了读仓库规范，还带一套固定的「坏味道基线」（重复代码、Feature Envy、Shotgun Surgery、Speculative Generality……）——即使仓库没写规范，这套基线也生效。</p>
+
+  <h2>本工程的真实案例</h2>
+  <div class="card">
+    <p>LinguaAI 的 50 次提交基本都走了这个循环。举两个有代表性的：</p>
+    <ol>
+      <li><strong>PDF 导入（issue #33）</strong>：纯函数解析模块先写测试再实现，页面级测试验收；末尾 <code>code-review</code> 修掉了超限禁选、实时校验等遗漏。结果：374 测试全绿才提交。</li>
+      <li><strong>AI 预处理正文可编辑（issue #36）</strong>：实现时工厂函数引用不稳定导致 effect 重复执行——这个坑在测试里被抓到，靠 <code>useMemo</code> 稳定引用后才绿。项目记忆里专门记了这条教训。</li>
+    </ol>
+    <p style="margin-bottom:0"><strong>共同特征</strong>：每个 commit 都对应一张已关闭的工单，且「红→绿→审查」一步没省。这是 36 张工单都能干净关闭的底层原因。</p>
+  </div>
+
+  <h2>整条循环的验收标准</h2>
+  <div class="card">
+    <ol style="margin-bottom:0">
+      <li>所有测试通过（单测 + 全量）</li>
+      <li>类型检查无错误</li>
+      <li>code-review 的 Standards 和 Spec 两轴都无阻塞问题</li>
+      <li>commit message 引用了对应工单（如 <code>Closes #36</code>）</li>
+      <li>范围严格对应工单，没有顺手做的「改进」</li>
+    </ol>
+  </div>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>读 <code>.agents/skills/tdd/SKILL.md</code> 的「Anti-patterns」一节，对照你自己写过的测试，有没有中过「同义反复」的招？</li>
+      <li>读 <code>.agents/skills/code-review/SKILL.md</code> 的 smell baseline 列表，挑一个你最常犯的坏味道（比如 Duplicated Code），想一个最近写过的代码例子。</li>
+      <li>思考题：如果 implement 跳过 tdd 直接写实现，会发生什么？（提示：回忆第 1 课「被放弃的第一版」）</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong><code>.agents/skills/implement/</code>、<code>tdd/</code>、<code>code-review/</code> 三个 SKILL.md。</p>
+    <p>下一课预告：<strong>第 5 课 · 踩坑与调试</strong>——循环不是永远一帆风顺。当测试红了却不知道为什么、当 Agent 改了 A 坏了 B，<code>diagnosing-bugs</code> skill 怎么用「反馈回路」把 bug 逼到死角。</p>
+    <a class="next-lesson" href="./0005-debugging-and-pitfalls.html">继续第 5 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: 'tdd 循环开始前，必须先和用户确认什么？',
+        options: [
+          'seam（测试的公共边界）',
+          '最终的代码结构',
+          '使用哪个测试框架',
+          '提交信息的措辞',
+        ],
+        answer: 0,
+        explain: '测试只该打在公共边界上。不先约定 seam，Agent 可能测私有方法、mock 内部协作者，这种测试一重构就碎。',
+      },
+      {
+        q: '以下哪个是 tdd 的反模式？',
+        options: [
+          '断言用和实现一样的算法重算期望值（同义反复）',
+          '先写失败测试再写实现',
+          '一次只推进一个垂直切片',
+          '期望值来自 spec 或手算',
+        ],
+        answer: 0,
+        explain: '同义反复（tautological）的测试按构造必然通过，永远不会和代码相矛盾，等于没测。期望值必须来自独立事实源。',
+      },
+      {
+        q: 'code-review 为什么要分成 Standards 和 Spec 两条独立轴？',
+        options: [
+          '防止一轴的通过掩盖另一轴的失败',
+          '让审查速度更快',
+          '减少子代理数量',
+          '只审查代码风格不审查功能',
+        ],
+        answer: 0,
+        explain: '一个改动可以规范但做错（Spec 挂），或做对但违反约定（Standards 挂）。两轴并行、并列汇报，就是为了不让一轴掩盖另一轴。',
+      },
+      {
+        q: 'implement 循环中，重构发生在哪个阶段？',
+        options: [
+          'code-review 阶段，不在红绿循环内',
+          '写测试之前',
+          '每个绿之后立刻',
+          '提交之后',
+        ],
+        answer: 0,
+        explain: 'tdd skill 明确：重构不属于红→绿循环，属于 review 阶段。实现时只写刚好让测试通过的代码，不顺手优化。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

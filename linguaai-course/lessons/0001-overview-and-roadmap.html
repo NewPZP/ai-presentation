@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 1 课 · 全景 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 1 课 / 共 8 课</span>
+    <h1 class="lesson-title">全景：一个人 + 一条 Skill 流水线，8 天交付一个应用</h1>
+    <p class="lesson-meta">预计 12 分钟 · 零代码 · 目标：拿到地图，理解 Agent / Skill / 工单 / 成本</p>
+  </header>
+
+  <h2>先看结果</h2>
+  <p>2026 年 8 月 1 日到 9 月 7 日，<strong>一个人 + TRAE Work + GLM-5.3</strong>，完成了下面这个真实可运行的应用 LinguaAI。</p>
+
+  <figure>
+    <img src="../docs/screenshots/demo.gif" alt="LinguaAI 功能演示">
+    <figcaption>8 天、20+ 会话、36 个 GitHub issue、50 次提交，从空白目录到这个应用</figcaption>
+  </figure>
+
+  <div class="card">
+    <strong>真实工具链与成本：</strong>
+    <p style="margin-bottom:0">
+      主力模型 <strong>GLM-5.3</strong>（跑在 TRAE Work 里）· 原型设计用 <strong>TRAE Work</strong> ·
+      本工程总花费约 <strong>5000 积分</strong>。
+      参考：TRAE Work Pro 会员 <strong>99 元/月</strong>，含 4000 + 200×30（每日签到）= 约 <strong>10000 积分/月</strong>——这个应用的成本不到一个月会员额度的一半。
+    </p>
+  </div>
+
+  <h2>这套课教什么</h2>
+  <p>不是「怎么用 React 做英语学习应用」——网上有成百上千篇。</p>
+  <p>它教你的是 <strong>「如何用一条 Skill 流水线驾驭 AI Agent 交付软件」</strong>：你怎么说、它怎么听、你给它哪个 Skill、你如何把关它的产出。LinguaAI 只是案例，换成任何应用，方法都能迁移。</p>
+
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p>你不是在「用 AI 写代码」，而是在「管理一个会写代码、但需要明确指令和严格验收的初级工程师」——而 <strong>Skill 就是你发给它的标准作业程序（SOP）</strong>。</p>
+  </div>
+
+  <h2>三个核心概念</h2>
+
+  <h3>① AI Agent 不是聊天机器人</h3>
+  <p>聊天机器人：一问一答，答完就忘。<strong>Agent</strong> 有目标、能调用工具、能多步执行——你给它「实现工单 #4」，它会自己读代码、写实现、跑测试、修 bug、汇报。在本课程里，Agent 就是 <strong>TRAE Work + GLM-5.3</strong>。</p>
+
+  <h3>② Skill 是给 Agent 装的「专业技能插件」</h3>
+  <p>每个 Skill 是一个 <code>SKILL.md</code> 文件，本工程用到的装在 <code>.agents/skills/</code>（属 Matt Pocock 工程套件）。本工程用的核心流水线：</p>
+  <pre><code>setup  →  grill-me  →  to-spec  →  to-tickets  →  implement
+(配置)    (讨论需求)   (整理PRD)   (拆分工单)    (实现)
+                                          ↑
+                              过程中按需调用 tdd / code-review</code></pre>
+
+  <div class="callout">
+    <span class="callout-title">最关键的事实</span>
+    <p>这些核心 Skill 都带 <code>disable-model-invocation: true</code>——<strong>模型不会自动调用，必须由你显式触发</strong>（如 <code>/grill-me</code>）。这揭示了范式的本质：<strong>方向盘始终在你手里，Skill 是你主动下达的命令，Agent 负责高效执行</strong>。</p>
+  </div>
+
+  <h3>③ 工单是人和 Agent 之间的「合同」</h3>
+  <p>口头的「帮我做个东西」是 Agent 灾难的来源——它会自由发挥，你反复返工。避免返工的秘诀：<strong>一切从一张写清楚验收标准的 Issue 开始</strong>。每张工单都是一份合同：做什么、算通过、边界在哪。Agent 照合同施工，你照合同验收。</p>
+
+  <h2>为什么有效：三个反直觉事实</h2>
+  <div class="card">
+    <ol style="margin:0">
+      <li><strong>先画原型比先写代码便宜一个数量级</strong>——改静态 HTML 要 1 分钟，改 React 页面要 1 小时。工程第一条提交就是原型。</li>
+      <li><strong>给 Agent 一个「假实现」先跑通全链路</strong>——mock 适配器让 AI 功能在不花钱的情况下先跑通、先写测试，接真实模型时只换开关。</li>
+      <li><strong>Agent 会「忘记」和「自作主张」，所以要有项目记忆</strong>——踩过的坑（CORS、TTS 资源 ID 格式、工厂引用不稳定……）都记进项目记忆，后续会话自动加载。</li>
+    </ol>
+  </div>
+
+  <div class="callout callout-warn">
+    <span class="callout-title">被放弃的第一版</span>
+    <p>工程最初用 Next.js，三天后整个方向推翻重来。原因不在技术，而在<strong>协作方式错了</strong>：没先走流水线对齐需求，Agent 在过重的技术方案里反复折腾。教训不是「别用 Next.js」，而是<strong>「先对齐要什么、再决定怎么造」</strong>。</p>
+  </div>
+
+  <h2>课程地图（8 课）</h2>
+  <ol class="roadmap">
+    <li class="now">全景<span class="roadmap-note">Agent / Skill / 工单 / 成本（本课）</span></li>
+    <li>原型设计<span class="roadmap-note">solo-design 先把「长什么样」定下来</span></li>
+    <li>需求产出<span class="roadmap-note">setup → grill-me → to-spec → to-tickets，一个想法变一组工单</span></li>
+    <li>实现循环<span class="roadmap-note">implement + tdd + code-review，拿工单到提交</span></li>
+    <li>踩坑与调试<span class="roadmap-note">diagnosing-bugs + 真实 bug 复盘</span></li>
+    <li>技术实现<span class="roadmap-note">LinguaAI 架构浓缩（只讲思路）</span></li>
+    <li>元课程<span class="roadmap-note">teach skill 怎么生成这套教程</span></li>
+    <li>展望与挖坑<span class="roadmap-note">本工程可改进之处，为后续课程留白</span></li>
+  </ol>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>运行 <code>git log --oneline --reverse | head -10</code>，找到第一条原型提交。问：为什么「原型」会成为第一条提交？</li>
+      <li>打开 GitHub Issue #1（PRD），看它怎么把一个应用拆成 10 张可独立验收的工单。</li>
+      <li>翻一眼 <code>.agents/skills/</code>，找到 <code>grill-me</code>、<code>to-spec</code>、<code>to-tickets</code>、<code>implement</code> 的 SKILL.md，感受「Skill = 一份 SOP」。</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong><a href="https://github.com/NewPZP/learn_english_with_ai/issues">GitHub Issue 列表</a> + <code>.agents/skills/</code> 目录（本课一手史料）。</p>
+    <p>下一课预告：<strong>第 2 课 · 原型设计</strong>——在讨论需求之前，先用 TRAE Work 的 solo-design skill 把应用「长什么样」可视化定下来。原型先行，是避免返工的第一道保险。</p>
+    <a class="next-lesson" href="./0002-prototype-design.html">继续第 2 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: '本工程核心 Skill 流水线顺序是？',
+        options: [
+          'setup → grill-me → to-spec → to-tickets → implement',
+          'to-tickets → grill-me → implement → to-spec',
+          'implement → tdd → to-spec → grill-me',
+          'to-spec → implement → grill-me → to-tickets',
+        ],
+        answer: 0,
+        explain: 'setup 配置 → grill-me 讨论需求 → to-spec 整理成 PRD issue → to-tickets 拆分工单 → implement 实现。tdd/code-review 等辅助 skill 在实现中按需介入。',
+      },
+      {
+        q: 'disable-model-invocation: true 意味着什么？',
+        options: [
+          '必须由用户显式触发，模型不自动调用',
+          'Skill 被永久禁用',
+          '只能由模型自动判断何时调用',
+          'Skill 只在生产环境生效',
+        ],
+        answer: 0,
+        explain: '方向盘在用户手里。Skill 是用户主动下达的命令（如 /grill-me），Agent 负责高效执行，而不是替用户决定做什么。',
+      },
+      {
+        q: '避免 Agent「自由发挥」的关键手段是？',
+        options: [
+          '一切从写清楚验收标准的 Issue 开始',
+          '把所有代码都交给 Agent 重写',
+          '只使用真实 AI 模型不写 mock',
+          '避免使用任何第三方框架',
+        ],
+        answer: 0,
+        explain: '工单是人机之间的合同：做什么、算通过、边界在哪都写清楚。Agent 照合同施工，人照合同验收。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

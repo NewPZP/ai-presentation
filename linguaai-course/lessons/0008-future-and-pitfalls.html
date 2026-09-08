@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 7 课 · 展望与挖坑 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 8 课 / 共 8 课 · <a href="./0007-meta-how-this-course-was-made.html">上一课</a></span>
+    <h1 class="lesson-title">展望与挖坑：这套方法能改进的地方</h1>
+    <p class="lesson-meta">预计 12 分钟 · 目标：诚实复盘本工程和这套 Agent 协作范式的不足，为后续课程留白</p>
+  </header>
+
+  <h2>为什么要专门讲「不足」</h2>
+  <p>前 6 课都在讲「怎么做」。最后一课讲<strong>「哪里还不够好」</strong>。一个方法论如果只展示成功案例，是危险的——你会以为它万能。诚实的复盘比完美的宣传更有价值。</p>
+
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p><strong>最大的成本不是积分，是「每个会话重新对齐」的认知开销。</strong>这套范式的下一个突破口，是让 Agent 跨会话记住项目上下文，而不是每次从零开始。</p>
+  </div>
+
+  <h2>坑一：会话割裂，Agent 每次都要重新了解项目</h2>
+  <p>本工程用了 <strong>20+ 个会话</strong>完成。每个新会话开头，Agent 都要重新读仓库、重新理解「这个应用是干什么的」、重新加载项目记忆。<strong>这是最大的隐性成本</strong>——不是钱，是时间和注意力。</p>
+  <p>项目记忆（<code>project_memory.md</code>）部分缓解了这个问题，但它是<strong>事后沉淀</strong>的，且只记录「硬约束」和「教训」，不记录「当前进行到哪」。</p>
+  <div class="card">
+    <strong>可能的改进方向：</strong>
+    <ul style="margin-bottom:0">
+      <li><strong>会话交接文档</strong>：每个会话结束时写一份 <code>.scratch/session-handoff.md</code>（当前在做什么、下一步是什么、有哪些未决问题），下个会话开头 Agent 先读它</li>
+      <li><strong>项目状态文件</strong>：维护一份始终最新的 <code>STATUS.md</code>（已完成的工单、进行中的工单、下一步优先级），Agent 不用翻 issue 列表</li>
+      <li><strong>自动加载项目记忆</strong>：让 Agent 在每个会话开头自动注入项目记忆，而不是靠它「想起来去读」</li>
+    </ul>
+  </div>
+
+  <h2>坑二：token 消耗与会话长度的矛盾</h2>
+  <p>本工程约 <strong>5000 积分</strong>。看起来不多，但有一个隐藏矛盾：</p>
+  <ul>
+    <li><strong>所有任务放一个会话</strong>：上下文连贯，不用重新对齐，但会话越来越长，每轮都要重传整个历史，<strong>token 浪费严重</strong></li>
+    <li><strong>每个任务开新会话</strong>：token 省了，但每个会话要重新对齐项目，<strong>认知开销大</strong>，且容易丢失上下文导致返工</li>
+  </ul>
+  <p>本工程的实际做法是「按功能模块切会话」（导入一个会话、音频一个会话、PDF 一个会话……），这是一个折中，但不是最优解。</p>
+  <div class="card">
+    <strong>可能的改进方向：</strong>
+    <ul style="margin-bottom:0">
+      <li><strong>会话即工单</strong>：一个会话 = 一张工单的实现循环，做完就关。上下文靠工单本身（验收标准）和项目记忆传递</li>
+      <li><strong>摘要压缩</strong>：长会话到一定长度后，让 Agent 把历史摘要成几百字的「会话记忆」，后续只带摘要不带全量历史</li>
+      <li><strong>模块化上下文</strong>：Agent 按需加载相关文件（读工单时只加载相关模块），而不是每次把整个仓库塞进上下文</li>
+    </ul>
+  </div>
+
+  <h2>坑三：Skill 触发全靠手动</h2>
+  <p>核心 skill 都带 <code>disable-model-invocation: true</code>——必须用户手动输入 <code>/grill-me</code>、<code>/to-spec</code> 等。这保证了「人主导」，但也意味着<strong>用户必须记住该在什么时候用哪个 skill</strong>。</p>
+  <p>对新手来说，「什么时候该 grill-me、什么时候该 to-spec」本身就是需要学习的。本课程其实就在教这个判断。</p>
+  <div class="card">
+    <strong>可能的改进方向：</strong>
+    <ul style="margin-bottom:0">
+      <li><strong>流水线编排器</strong>：一个 meta-skill，根据当前状态自动建议下一步该触发哪个 skill（检测到有 PRD 无工单 → 建议 to-tickets）</li>
+      <li><strong>状态机驱动</strong>：把流水线建模成状态机（想法 → 已讨论 → 有 PRD → 有工单 → 已实现），Agent 自动判断当前状态和下一步</li>
+      <li><strong>模板化触发</strong>：常用组合（grill-me + to-spec + to-tickets）打包成一个「需求产出」宏，一次触发跑完三步</li>
+    </ul>
+  </div>
+
+  <h2>坑四：项目记忆的边界模糊</h2>
+  <p>项目记忆很有用，但<strong>什么该记、什么不该记</strong>没有明确规则。记少了不够用，记多了变成噪音（Agent 可能被过时的记忆误导）。</p>
+  <p>本工程的项目记忆里既有「硬约束」（必须用 async/await），也有「经验教训」（工厂引用要用 useMemo），还有「工程约定」（240px 侧边栏）。这些混在一起，优先级不清晰。</p>
+  <div class="card">
+    <strong>可能的改进方向：</strong>
+    <ul style="margin-bottom:0">
+      <li><strong>分级记忆</strong>：硬约束（不可违反）> 当前状态（会变）> 历史教训（参考），Agent 按优先级加载</li>
+      <li><strong>过期机制</strong>：每条记忆带时间戳和「适用范围」，超过一定时间或范围变化时标记为待复核</li>
+      <li><strong>记忆即 ADR</strong>：把重要决策写成架构决策记录（ADR），有编号、有上下文、有后果，比散记更可追溯</li>
+    </ul>
+  </div>
+
+  <h2>坑五：本工程本身的功能局限</h2>
+  <p>作为应用，LinguaAI 还有不少没做的：</p>
+  <ul>
+    <li>纯 localStorage，<strong>无云端同步</strong>——换设备数据就没了</li>
+    <li><strong>无多用户</strong>——个人应用，没有账号体系</li>
+    <li><strong>复习算法简单</strong>——没有 SM-2 之类的间隔重复调度</li>
+    <li><strong>移动端未适配</strong>——定位桌面版</li>
+  </ul>
+  <p>这些不是 bug，是<strong>有意的范围控制</strong>（回忆 PRD 的 Out of Scope）。但如果要继续做，这些是自然的下一步。</p>
+
+  <h2>最后的总结</h2>
+  <div class="card">
+    <p style="margin-top:0">这套课的核心信息可以浓缩成三句话：</p>
+    <ol style="margin-bottom:0">
+      <li><strong>Agent 是初级工程师，Skill 是 SOP，工单是合同</strong>——你的角色是管理者，不是打字员</li>
+      <li><strong>先对齐要什么，再决定怎么造</strong>——grill-me → to-spec → to-tickets 不是流程，是防止返工的保险</li>
+      <li><strong>把决策固化成记忆，把坑变成资产</strong>——项目记忆和 learning-records 让每次会话站在昨天的肩膀上</li>
+    </ol>
+  </div>
+
+  <p>课程到此结束。但方法论的实践才刚开始——<strong>用你自己的项目跑一遍这条流水线，比读十遍教程都管用</strong>。</p>
+
+  <div class="exercise">
+    <div class="exercise-title">课后行动</div>
+    <ol>
+      <li>挑一个你手头的小项目（或一个想法），完整跑一遍：setup → grill-me → to-spec → to-tickets → implement。不求完美，求跑通。</li>
+      <li>跑完后，写一份你自己的 <code>project_memory.md</code>，记录这次踩的坑和定下的约束。</li>
+      <li>回头看第 7 课列的五个坑，挑一个你最有共鸣的，想想在你的项目里怎么规避。</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课程结束</h2>
+    <p>7 课全部完成。你现在掌握了：用一条 Skill 流水线（setup → grill-me → to-spec → to-tickets → implement + tdd + code-review）把模糊想法变成已关闭工单的完整方法，以及它在 LinguaAI 上的真实实践。</p>
+    <p><strong>有任何不清楚的地方，随时回去问你的 AI 老师。</strong>它全程参与了这次建造。</p>
+    <p>如需导出整套课程为 PDF 或继续深化某个主题，直接告诉 AI 老师即可。</p>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: '本工程最大的隐性成本是？',
+        options: [
+          '每个新会话 Agent 重新了解项目的认知开销',
+          'API 调用费用',
+          '服务器托管费',
+          '本地开发环境搭建',
+        ],
+        answer: 0,
+        explain: '20+ 个会话，每个新会话 Agent 都要重新读仓库、重新理解应用、重新加载记忆。这是时间和注意力成本，不是金钱成本。',
+      },
+      {
+        q: '「所有任务放一个会话」和「每个任务开新会话」的核心矛盾是？',
+        options: [
+          '上下文连贯 vs token 浪费',
+          '速度 vs 质量',
+          '成本 vs 功能',
+          '安全 vs 便利',
+        ],
+        answer: 0,
+        explain: '一个会话上下文连贯但历史越来越长、token 浪费；多个会话省 token 但每次要重新对齐。本工程按功能模块切会话是折中。',
+      },
+      {
+        q: '核心 skill 带 disable-model-invocation: true 的代价是？',
+        options: [
+          '用户必须记住何时触发哪个 skill',
+          'Agent 无法使用这些 skill',
+          'skill 运行变慢',
+          '需要额外付费',
+        ],
+        answer: 0,
+        explain: '保证了「人主导」，但用户必须学会判断何时用 grill-me、何时用 to-spec。本课程本质上就是在教这个判断。',
+      },
+      {
+        q: '「会话即工单」策略的核心思路是？',
+        options: [
+          '一个会话只做一张工单，上下文靠工单和项目记忆传递',
+          '所有工单放一个大会话里做完',
+          '每个会话不关联任何工单',
+          '先开会话再补工单',
+        ],
+        answer: 0,
+        explain: '一个会话 = 一张工单的实现循环，做完就关。避免长会话的 token 浪费，同时靠工单验收标准和项目记忆保持上下文连贯。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

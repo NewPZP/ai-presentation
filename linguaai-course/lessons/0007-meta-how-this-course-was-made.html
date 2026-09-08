@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 6 课 · 元课程 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 7 课 / 共 8 课 · <a href="./0006-technical-architecture.html">上一课</a></span>
+    <h1 class="lesson-title">元课程：这套教程是怎么被「教」出来的</h1>
+    <p class="lesson-meta">预计 12 分钟 · 目标：理解 teach skill 的工作流——你现在读的这套课，本身就是 teach skill 的产物</p>
+  </header>
+
+  <h2>跳出应用，看教程本身</h2>
+  <p>前 5 课都在讲「怎么用 Agent 开发 LinguaAI」。这节课换个角度：<strong>你正在读的这套教程，就是用 teach skill 生成的</strong>。它同样遵循「先对齐、再产出」的方法论。</p>
+
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p><strong>教一门课 = 先写使命和笔记，再按课号顺序产出可复用的 HTML。</strong>teach skill 不是「写一堆文章」，而是搭一个有骨架、有共享组件、有验收标准的教学工作区。</p>
+  </div>
+
+  <h2>teach skill 的工作流</h2>
+
+  <h3>第一步：搜集资料，建立事实底座</h3>
+  <p>不凭空写。先把所有一手素材摸清：</p>
+  <ul>
+    <li>36 个已关闭 issue（PRD + 主工单 + 增强/修复）</li>
+    <li>50 次提交历史</li>
+    <li>8 个工作日的全部会话摘要</li>
+    <li>工程 README、项目记忆里的经验教训</li>
+    <li><code>.agents/skills/</code> 下每个 skill 的真实 SKILL.md</li>
+  </ul>
+  <p>这些素材锚定进 <code>NOTES.md</code>，写课时只引用真实来源，不编造。</p>
+
+  <h3>第二步：写三份「元文档」</h3>
+  <p>在写任何一课前，先在仓库根目录建三个文件：</p>
+  <table>
+    <thead><tr><th>文件</th><th>作用</th></tr></thead>
+    <tbody>
+      <tr><td><code>MISSION.md</code></td><td>课程使命 + 成功标准 + 约束 + 范围外</td></tr>
+      <tr><td><code>NOTES.md</code></td><td>用户偏好、真实工具链/成本、skill 机制、课程地图、素材锚点</td></tr>
+      <tr><td><code>RESOURCES.md</code></td><td>信任资源清单</td></tr>
+    </tbody>
+  </table>
+  <p>这三份是「教学合同」：每课都要符合 MISSION 的约束、引用 NOTES 的事实、用 RESOURCES 的来源。用户随时可以改这三份来调整方向（比如你之前让我「减少技术篇幅」「按阶段组织」，就是改 NOTES 的课程地图）。</p>
+
+  <h3>第三步：搭共享组件</h3>
+  <p>不重复造轮子。先建两个共享文件，所有课复用：</p>
+  <ul>
+    <li><code>assets/course.css</code> — 统一视觉（卡片、提示框、表格、练习区、课程地图样式）</li>
+    <li><code>assets/quiz.js</code> — 通用测验组件（<code>LinguaQuiz('#quiz', [...])</code>），每课末尾插几行 JS 就有即时反馈</li>
+  </ul>
+  <p>这样每课只写<strong>内容</strong>，不操心样式和交互。</p>
+
+  <h3>第四步：按课号顺序产出 HTML</h3>
+  <p>每课一个 <code>lessons/NNNN-主题.html</code>，固定结构：</p>
+  <pre><code>header（课号 + 标题 + 时长 + 目标）
+↓
+核心内容（分节，每节有一句话记忆点）
+↓
+callout / card（强调关键洞察）
+↓
+exercise（动手练习）
+↓
+quiz（即时反馈测验，3-4 题）
+↓
+footer（主资源 + 下一课预告 + 继续按钮）</code></pre>
+  <p>用户说「继续第 N 课」，就按 NOTES 里的课程地图生成下一课，写完在浏览器打开。</p>
+
+  <h3>第五步：用 learning-records 记录关键决策</h3>
+  <p>每次有重要的方向调整（比如从 11 课改 7 课、读了真实 SKILL.md 修正命名），就写一条 <code>learning-records/NNNN-标题.md</code>，记清「事实 → 影响 → 修正」。这和 LinguaAI 的项目记忆是同一个思路：<strong>把决策固化，后续不重踩</strong>。</p>
+
+  <h2>这套工作流的设计哲学</h2>
+  <div class="card">
+    <ol style="margin:0">
+      <li><strong>先骨架后血肉</strong>——MISSION/NOTES/课程地图先定，再写内容。改方向时改骨架，不改每课。</li>
+      <li><strong>共享组件优先</strong>——css 和 quiz.js 只写一次，每课复用。</li>
+      <li><strong>事实锚定</strong>——所有 skill 讲解以真实 SKILL.md 为准，不复述用户口述（所以才会发现 to-tickets 是复数、grill-me 调 grilling）。</li>
+      <li><strong>逐课交付 + 即时反馈</strong>——一课一课来，每课末尾有测验，用户随时可以喊停或调整。</li>
+      <li><strong>教学产物不进 git</strong>——MISSION/NOTES/lessons/assets 在用户确认前都是工作区文件，不污染工程仓库。</li>
+    </ol>
+  </div>
+
+  <h2>你可以怎么复用这套方法</h2>
+  <p>teach skill 的流程不限于教「用 Agent 开发」。任何你想沉淀成教程的主题——你熟悉的框架、你踩过的坑、你团队的工作流——都可以套这个模板：</p>
+  <ol>
+    <li>先写 MISSION（教什么、学成什么样、不教什么）</li>
+    <li>再写 NOTES（素材锚点、课程地图、你的偏好）</li>
+    <li>搭共享组件（哪怕只是一个 css 文件）</li>
+    <li>按课号产出，每课有练习和测验</li>
+  </ol>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>打开本仓库的 <code>MISSION.md</code> 和 <code>NOTES.md</code>，对比它们的结构：MISSION 管「为什么和边界」，NOTES 管「事实和地图」。想想为什么要分成两个文件而不是一个。</li>
+      <li>看 <code>assets/quiz.js</code> 和任意一课末尾的 <code>LinguaQuiz(...)</code> 调用，体会共享组件怎么让每课只写内容。</li>
+      <li>思考题：如果你要把这套教程教给别人，你会怎么改写 MISSION 的「Success looks like」？</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong>本仓库的 <code>MISSION.md</code>、<code>NOTES.md</code>、<code>assets/</code>、<code>lessons/</code>——你正在读的就是它们的产物。</p>
+    <p>下一课预告：<strong>第 8 课 · 展望与挖坑</strong>——这套工作流不是完美的。最后一节课，我们诚实聊聊本工程和这套教学方法都有哪些可以改进的地方，为后续课程留白。</p>
+    <a class="next-lesson" href="./0008-future-and-pitfalls.html">继续第 8 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: 'teach skill 在写任何一课前，必须先建哪三份元文档？',
+        options: [
+          'MISSION.md、NOTES.md、RESOURCES.md',
+          'README.md、package.json、tsconfig.json',
+          'index.html、style.css、script.js',
+          'spec.md、tasks.md、review.md',
+        ],
+        answer: 0,
+        explain: 'MISSION 管使命和边界，NOTES 管事实和课程地图，RESOURCES 管信任资源清单。这三份是「教学合同」，每课都要遵守。',
+      },
+      {
+        q: 'teach skill 为什么强调「事实锚定」？',
+        options: [
+          '所有 skill 讲解以真实 SKILL.md 为准，不复述口述',
+          '让教程看起来更专业',
+          '减少需要写的内容',
+          '避免使用外部资源',
+        ],
+        answer: 0,
+        explain: '比如用户说 to-ticket，读了 SKILL.md 才发现是 to-tickets（复数）。事实锚定避免凭空编造机制细节。',
+      },
+      {
+        q: 'teach skill 里「共享组件」指的是？',
+        options: [
+          'course.css 和 quiz.js，所有课复用',
+          'React 组件库',
+          'AI 适配器',
+          '测试工具函数',
+        ],
+        answer: 0,
+        explain: 'assets/course.css 统一样式，assets/quiz.js 提供通用测验组件。每课只写内容，不操心样式和交互。',
+      },
+      {
+        q: '教学产物（MISSION/lessons 等）在用户确认前应该？',
+        options: [
+          '留在工作区，不提交 git',
+          '立即提交到 main 分支',
+          '发到 GitHub Release',
+          '部署到网站',
+        ],
+        answer: 0,
+        explain: '教学产物在用户确认前都是工作区文件，不污染工程仓库。这和 LinguaAI 工程代码分开管理。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

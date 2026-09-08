@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 2 课 · 原型设计 — LinguaAI 建造课程</title>
+  <link rel="stylesheet" href="../assets/course.css">
+</head>
+<body>
+<article class="lesson">
+
+  <header class="lesson-header">
+    <span class="lesson-kicker"><span class="dot"></span>LinguaAI 建造课程 · 第 2 课 / 共 8 课 · <a href="./0001-overview-and-roadmap.html">上一课</a></span>
+    <h1 class="lesson-title">原型设计：用 solo-design 先把「长什么样」定下来</h1>
+    <p class="lesson-meta">预计 15 分钟 · 基于真实 SKILL.md（<code>~/.trae-cn/builtin/design/default/skills/solo-design/</code>）· 目标：理解原型在流水线中的位置，以及 solo-design skill 是怎么工作的</p>
+  </header>
+
+  <h2>原型在流水线中的位置</h2>
+  <p>回忆第 1 课的「先画原型比先写代码便宜一个数量级」。原型设计发生在<strong>需求讨论之前</strong>——你先把应用「长什么样」用可视化方式定下来，再去讨论「要做什么」。</p>
+  <pre><code>想法（"AI 学英语"）
+   ↓ ① 原型设计（solo-design）  ← 本课
+   ↓ ② setup → grill-me → to-spec → to-tickets（第 3 课）
+   ↓ ③ implement + tdd + code-review（第 4 课）
+   ...</code></pre>
+  <p>为什么先原型？因为<strong>视觉比文字更容易暴露需求漏洞</strong>。你画出来一看就知道「这里少个按钮」「那个流程走不通」，比写一千字 PRD 都管用。</p>
+
+  <div class="callout">
+    <span class="callout-title">一句话记住</span>
+    <p><strong>原型是需求的「可视化初稿」，solo-design 是把它变成可交互 HTML 画布的 skill。</strong>它产出的不是代码，是一个你能点、能看、能改的设计稿——后面所有开发都围绕它展开。</p>
+  </div>
+
+  <h2>solo-design 是什么</h2>
+  <p>solo-design 是 TRAE Work 内置的设计 skill（路径 <code>~/.trae-cn/builtin/design/default/skills/solo-design/</code>）。它不是简单的「帮你画个页面」，而是一套<strong>有路由、有分工、有验证门</strong>的精密系统。</p>
+
+  <h3>核心路由链</h3>
+  <p>solo-design 遵循一条固定链路：</p>
+  <pre><code>decision（判断意图）
+  → load（只加载选定泳道的文件）
+  → preflight（CSS 预检 + 派发清单）
+  → dispatch（主代理派子代理生成页面）
+  → validate（验证 .design 和渲染）
+  → readiness（交付就绪门）</code></pre>
+  <p>关键设计：<strong>不扫描所有 workflow 文件夹</strong>。选定一个泳道后，只读那个泳道的 <code>INTENT_WORKFLOW.md</code> 和它声明的上下文文件。这避免了上下文爆炸。</p>
+
+  <h2>顶层分流：先判断是不是 solo-design 的活</h2>
+  <p>solo-design 不包办所有设计。它先做两次顶层移交：</p>
+  <ul>
+    <li><strong>像素级编辑已有位图</strong> → 移交 <code>solo-image-edit</code></li>
+    <li><strong>纯位图产出</strong>（海报、banner、KV、封面、插画）→ 移交 <code>solo-graphic-generation</code></li>
+  </ul>
+  <p>只有「可编辑的 HTML 页面/UI/原型」才留在 solo-design 里。</p>
+
+  <h2>九条泳道（P1–P9）：按优先级匹配</h2>
+  <p>剩下的请求按 P1 到 P9 优先级匹配，命中即停：</p>
+  <table>
+    <thead><tr><th>优先级</th><th>场景</th><th>泳道</th></tr></thead>
+    <tbody>
+      <tr><td>P1</td><td>编辑已有项目/页面、加状态、加对比页</td><td>existing_edit</td></tr>
+      <tr><td>P2</td><td>重新设计、复制项目、转设备</td><td>redesign</td></tr>
+      <tr><td>P3</td><td>生成多方案变体对比</td><td>variants</td></tr>
+      <tr><td>P4</td><td>主题/色板/字体定制</td><td>theme_customize</td></tr>
+      <tr><td>P5</td><td>1:1 复刻、像素级还原</td><td>restore_1to1</td></tr>
+      <tr><td>P6</td><td>绑定 Design Library（设计系统）</td><td>library_bound</td></tr>
+      <tr><td>P7</td><td>长文案/PPT/表格/法律文本（静态排版）</td><td>graphic_layout_static</td></tr>
+      <tr><td>P8</td><td>长 PRD、多页面、复杂交互</td><td>complex_html_page</td></tr>
+      <tr><td>P9</td><td>无 Library、无还原目标的开放式创作</td><td>free_exploration</td></tr>
+    </tbody>
+  </table>
+  <p>本工程的原型设计走的是 <strong>P9 free_exploration</strong>——从零开始画桌面版应用界面。</p>
+
+  <h2>主代理 vs 页面子代理：严格分工</h2>
+  <p>solo-design 的一个精妙设计是<strong>角色分离</strong>：</p>
+  <table>
+    <thead><tr><th>角色</th><th>职责</th><th>禁止做</th></tr></thead>
+    <tbody>
+      <tr><td><strong>主代理</strong></td><td>路由、写 <code>.design</code>、注册图片/交互、验证、交付</td><td>不直接写页面 HTML</td></tr>
+      <tr><td><strong>页面子代理</strong></td><td>只生成页面 HTML，消费泳道运行时指南和派发包</td><td>不写 <code>.design</code>、不跑验证、不开预览服务器、不生成图片</td></tr>
+    </tbody>
+  </table>
+  <p>为什么这么分？因为<strong>生成 HTML 和管理设计文件是两种不同的关注点</strong>。子代理专注把一个页面画好，主代理保证整个项目的一致性和有效性。</p>
+
+  <h2>.design 文件：画布优先的产物格式</h2>
+  <p>solo-design 的核心产物是 <code>.design</code> 文件——一个 JSON，<strong>每个页面/图片都必须在里面登记</strong>：</p>
+  <pre><code>{
+  "name": "LinguaAI",
+  "config": { "deviceType": "desktop", "autoLayout": true },
+  "data": [
+    {
+      "id": "page-article-list",
+      "title": "文章列表",
+      "type": "page",
+      "devMetadata": {
+        "htmlSrc": "pages/article-list.html",
+        "interactions": []
+      }
+    }
+  ]
+}</code></pre>
+  <p><code>.design</code> 有效性是<strong>阻塞性</strong>的：JSON 必须合法、<code>data</code> 非空、每个页面节点指向存在的 HTML、图片资产已注册。不过关就不许交付。</p>
+
+  <h2>自由探索的快速路径（本工程实际走的路）</h2>
+  <p>P9 free_exploration 有一个「快速路径」，专为普通单页/少状态设计优化：</p>
+  <ol>
+    <li><strong>建路由卡</strong>：模式、复杂度、是否需要提问/图片</li>
+    <li><strong>写项目简报</strong>：用户意图、创意配方、CSS 合约、页面计划</li>
+    <li><strong>CSS 预检</strong>：生成 <code>colors_and_type.css</code>（定义品牌色、语义变量、圆角），跑 <code>apply-html-head-contract.mjs</code> 验证能注入主题变量</li>
+    <li><strong>派发子代理生成页面</strong>：每页一个 packet，含 nodeId、htmlSrc、区块、domIds</li>
+    <li><strong>冒烟验证</strong>：跑 <code>validate-design-workspace.mjs</code>，只修渲染阻塞错误，软警告（圆角、阴影等）不修</li>
+  </ol>
+
+  <h3>CSS 合约预检：为什么 colors_and_type.css 是视觉权威</h3>
+  <p>solo-design 要求在生成任何页面前，先写一份 <code>colors_and_type.css</code>，定义一组语义变量（background、foreground、card、primary、border、muted 等）。然后跑一个脚本验证这些变量能被正确注入 HTML head。</p>
+  <div class="callout">
+    <span class="callout-title">这和 LinguaAI 工程的呼应</span>
+    <p>本工程的 <code>colors_and_type.css</code> 就是原型阶段定下的视觉权威——后续所有页面的样式都基于这套语义变量，连明暗模式都是通过切换这些变量实现的。这就是为什么第 5 课提到「<code>colors_and_type.css</code> 作为视觉权威」。</p>
+  </div>
+
+  <h2>验证门：不验证完不许交付</h2>
+  <p>solo-design 有两道硬性验证：</p>
+  <ul>
+    <li><strong>validate-design-workspace.mjs</strong>：检查 <code>.design</code> 合法性、页面 HTML 存在性、head 基础设施、图片引用、交互注册</li>
+    <li><strong>validate-finish-readiness.mjs --check=all</strong>：设计工件就绪门，检查验证报告完整性、注册一致性、交付文本策略</li>
+  </ul>
+  <p>这和第 3 课的「code-review 提交前审查」是同一个哲学：<strong>自动化的门比人工检查可靠</strong>。</p>
+
+  <h2>原型产出后怎么用</h2>
+  <p>solo-design 产出的是<strong>可交互的 HTML 原型</strong>（在 <code>.design</code> 画布中）。你可以：</p>
+  <ul>
+    <li>在 TRAE Work 的设计预览里直接点击交互</li>
+    <li>把原型截图作为 PRD 的配图</li>
+    <li>把 <code>colors_and_type.css</code> 直接搬进工程作为视觉基线</li>
+    <li>把页面结构作为 to-spec/to-tickets 的输入</li>
+  </ul>
+  <p>本工程就是这么做的：原型先确认了「侧边栏 + 内容区」的布局和 Teal 色系，后面开发时直接沿用。</p>
+
+  <div class="exercise">
+    <div class="exercise-title">动手练习</div>
+    <ol>
+      <li>读 <code>~/.trae-cn/builtin/design/default/skills/solo-design/SKILL.md</code> 的「Route Priority」表，理解 P1–P9 的优先级逻辑。问：为什么「编辑已有项目」优先级最高？</li>
+      <li>找一个你自己的项目（或一个想法），用 solo-design 画一个单页原型。体会「先视觉、后需求」的感觉。</li>
+      <li>思考题：solo-design 的主代理/子代理分工，和第 3 课 implement 的「测试先行」有什么共同的设计哲学？（提示：关注点分离）</li>
+    </ol>
+  </div>
+
+  <div class="quiz" id="quiz"></div>
+
+  <footer class="lesson-footer">
+    <h2 style="margin-top:0">课后</h2>
+    <p><strong>主资源：</strong><code>~/.trae-cn/builtin/design/default/skills/solo-design/SKILL.md</code> + <code>intent-workflows/intent-page-free-exploration/</code>（本工程走的泳道）。</p>
+    <p>下一课预告：<strong>第 3 课 · 需求产出</strong>——原型定了「长什么样」，现在用 setup → grill-me → to-spec → to-tickets 把「要做什么」写成 Agent 能领取的工单。</p>
+    <a class="next-lesson" href="./0003-requirements.html">继续第 3 课 →</a>
+  </footer>
+
+  <script src="../assets/quiz.js"></script>
+  <script>
+    LinguaQuiz('#quiz', [
+      {
+        q: '原型设计在开发流水线中处于什么位置？',
+        options: [
+          '需求讨论之前，先可视化确认「长什么样」',
+          '实现之后，用来做验收',
+          '和需求讨论同时进行',
+          '只在出 bug 时用',
+        ],
+        answer: 0,
+        explain: '原型先行：先把应用长什么样用可视化方式定下来，再讨论要做什么。视觉比文字更容易暴露需求漏洞。',
+      },
+      {
+        q: 'solo-design 的顶层移交规则中，「生成海报/banner/封面」会交给谁？',
+        options: [
+          'solo-graphic-generation',
+          'solo-image-edit',
+          'solo-design 自己处理',
+          'design-library-creator',
+        ],
+        answer: 0,
+        explain: '纯位图产出（海报、banner、KV、封面、插画）移交 solo-graphic-generation。像素级编辑已有位图移交 solo-image-edit。只有可编辑 HTML 页面留在 solo-design。',
+      },
+      {
+        q: 'solo-design 中页面子代理的职责是？',
+        options: [
+          '只生成页面 HTML，不写 .design、不跑验证',
+          '负责整个项目的路由和验证',
+          '生成图片资产',
+          '决定走哪条泳道',
+        ],
+        answer: 0,
+        explain: '主代理负责路由、写 .design、验证；子代理只专注生成单个页面 HTML。关注点分离，保证项目一致性。',
+      },
+      {
+        q: 'solo-design 中 colors_and_type.css 的作用是？',
+        options: [
+          '定义语义颜色变量，作为整个项目的视觉权威',
+          '存储页面 HTML 内容',
+          '记录交互注册信息',
+          '配置验证脚本参数',
+        ],
+        answer: 0,
+        explain: 'colors_and_type.css 定义品牌色和语义变量（background/primary/border 等），通过 apply-html-head-contract.mjs 注入页面 head。它是整个项目的视觉基线，LinguaAI 工程直接沿用了它。',
+      },
+      {
+        q: 'solo-design 的自由探索快速路径中，CSS 预检失败后最多重试几次？',
+        options: [
+          '1 次（重写一次 colors_and_type.css 再跑）',
+          '3 次',
+          '无限次直到通过',
+          '不允许重试，直接报错',
+        ],
+        answer: 0,
+        explain: '预检失败后允许重写一次 colors_and_type.css 并重跑；再失败就停止并报渲染阻塞错误，不进入开放式 CSS 调试。这避免了无意义的修复循环。',
+      },
+    ])
+  </script>
+</article>
+</body>
+</html>

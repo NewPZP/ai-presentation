@@ -32,4 +32,31 @@ const COURSES = [
       ]}
     ]
   }
+,
+  {
+    title: "用 AI Agent 开发应用",
+    tag: "已完结 · 4 阶段",
+    desc: "以 LinguaAI 为案例，掌握 setup → grill-me → to-spec → to-tickets → implement 整条 Skill 流水线，8 天交付真实应用。",
+    stats: [{ big: "8", lbl: "节课" }, { big: "4", lbl: "阶段" }, { big: "~120min", lbl: "总时长" }],
+    gradient: "#134e4a, #14b8a6",
+    path: "linguaai-course",
+    stages: [
+      { name: "阶段一 · 起步", lessons: [
+        { n: "01", t: "全景：Agent + Skill 开发范式", f: "0001-overview-and-roadmap.html" },
+        { n: "02", t: "原型设计：solo-design 定界面", f: "0002-prototype-design.html" }
+      ]},
+      { name: "阶段二 · 核心流水线", lessons: [
+        { n: "03", t: "需求产出：想法变工单", f: "0003-requirements.html" },
+        { n: "04", t: "实现循环：工单到提交", f: "0004-implementation-loop.html" }
+      ]},
+      { name: "阶段三 · 调试与技术", lessons: [
+        { n: "05", t: "踩坑与调试：反馈回路", f: "0005-debugging-and-pitfalls.html" },
+        { n: "06", t: "技术实现：LinguaAI 架构", f: "0006-technical-architecture.html" }
+      ]},
+      { name: "阶段四 · 元与展望", lessons: [
+        { n: "07", t: "元课程：教程如何生成", f: "0007-meta-how-this-course-was-made.html" },
+        { n: "08", t: "展望与挖坑：可改进之处", f: "0008-future-and-pitfalls.html" }
+      ]}
+    ]
+  }
 ];
