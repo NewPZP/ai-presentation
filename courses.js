@@ -34,9 +34,9 @@ const COURSES = [
   }
 ,
   {
-    title: "用 AI Agent 开发应用",
+    title: "别让 AI 瞎写代码｜工程化 Agent+skills 开发全流程",
     tag: "已完结 · 4 阶段",
-    desc: "以 LinguaAI 为案例，掌握 setup → grill-me → to-spec → to-tickets → implement 整条 Skill 流水线，8 天交付真实应用。",
+    desc: "以 LinguaAI 为案例，走完 setup → grill-me → to-spec → to-tickets → implement 整条 Skill 流水线，从需求到交付一条龙，把 AI 开发做成工程。",
     stats: [{ big: "8", lbl: "节课" }, { big: "4", lbl: "阶段" }, { big: "~120min", lbl: "总时长" }],
     gradient: "#134e4a, #14b8a6",
     path: "linguaai-course",

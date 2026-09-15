@@ -1,4 +1,4 @@
-# Mission: 用 AI Agent + Skill 从零交付一个应用（以 LinguaAI 为案例）
+# Mission: 用 AI Agent + Skill 工程化交付一个应用（以 LinguaAI 为案例）
 
 ## Why
 用户在 2026-08-01 至 09-07 期间，用 TRAE Work + GLM-5.3，借助一套工程 Skill 套件（setup-matt-pocock-skills → grill-me/grilling 讨论需求 → to-spec 整理需求发 issue → to-tickets 拆分需求 → implement 实现，过程中按需调用 tdd、code-review 等），以 20+ 会话、36 个 GitHub issue 从零交付了 LinguaAI，总成本约 5000 积分。现在要把这套「怎么用 Agent 和 Skill 开发」的工作方法沉淀成一套可教学的课程——重点不是 LinguaAI 的技术细节，而是**驾驭 AI Agent 协作范式 + 用好 Skill 流水线**。

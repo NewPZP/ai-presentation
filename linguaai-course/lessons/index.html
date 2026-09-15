@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>AI 学习中心</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #1e293b;
+      --border: #334155;
+      --text: #e2e8f0;
+      --text-muted: #94a3b8;
+      --text-dim: #64748b;
+      --accent: #38bdf8;
+      --accent-dark: #0ea5e9;
+      --overlay: rgba(15, 23, 42, 0.75);
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100vh;
+    }
+
+    .container { max-width: 1040px; margin: 0 auto; padding: 0 28px; }
+
+    /* Header */
+    header { padding: 56px 0 40px; }
+
+    .brand {
+      font-size: 0.8rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      color: var(--text-dim);
+      margin-bottom: 12px;
+    }
+
+    header h1 {
+      font-size: 2rem;
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      color: #f8fafc;
+      margin-bottom: 8px;
+    }
+
+    .sub {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      margin-bottom: 24px;
+    }
+
+    /* Search */
+    .search {
+      width: 100%;
+      max-width: 380px;
+      padding: 12px 16px;
+      font-size: 0.9rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 10px;
+      outline: none;
+      transition: border-color 0.2s;
+      font-family: inherit;
+    }
+    .search:focus { border-color: var(--accent); }
+    .search::placeholder { color: var(--text-dim); }
+
+    /* Main */
+    main { padding: 0 0 96px; }
+
+    /* Course Grid - 自适应 */
+    .course-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 20px;
+    }
+
+    /* Compact Course Card */
+    .course-card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      transition: border-color 0.2s, transform 0.2s;
+    }
+    .course-card:hover {
+      border-color: var(--accent);
+      transform: translateY(-2px);
+    }
+
+    .card-banner {
+      height: 6px;
+      background: linear-gradient(90deg, var(--accent), var(--accent-dark));
+    }
+
+    .card-body {
+      padding: 22px;
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      gap: 14px;
+    }
+
+    .tag {
+      display: inline-block;
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--accent);
+      border: 1px solid var(--accent);
+      padding: 2px 8px;
+      border-radius: 4px;
+      align-self: flex-start;
+    }
+
+    .card-title {
+      font-size: 1.25rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      color: #f8fafc;
+      line-height: 1.3;
+    }
+
+    .card-desc {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      line-height: 1.55;
+      flex: 1;
+    }
+
+    .stats {
+      display: flex;
+      gap: 18px;
+      padding-top: 12px;
+      border-top: 1px solid var(--border);
+    }
+
+    .stat .big {
+      font-size: 1.2rem;
+      font-weight: 700;
+      color: var(--accent);
+      line-height: 1;
+    }
+    .stat .lbl {
+      font-size: 0.68rem;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      margin-top: 3px;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 10px 16px;
+      font-size: 0.85rem;
+      border: 1px solid var(--accent);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--accent);
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    .btn:hover { background: var(--accent); color: var(--bg); }
+    .btn .chev { transition: transform 0.25s; }
+
+    /* Modal 浮窗 */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: var(--overlay);
+      backdrop-filter: blur(4px);
+      z-index: 100;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      animation: fadeIn 0.2s ease;
+    }
+    .modal-overlay.open { display: flex; }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+    .modal {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      width: 100%;
+      max-width: 560px;
+      max-height: 80vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      animation: slideUp 0.25s ease;
+    }
+
+    @keyframes slideUp {
+      from { transform: translateY(20px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+
+    .modal-header {
+      padding: 24px 28px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 16px;
+    }
+
+    .modal-title-wrap { flex: 1; }
+    .modal-title {
+      font-size: 1.3rem;
+      font-weight: 700;
+      color: #f8fafc;
+      margin-bottom: 4px;
+    }
+    .modal-sub {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+    }
+
+    .modal-close {
+      flex-shrink: 0;
+      width: 32px;
+      height: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      font-size: 1.1rem;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s;
+    }
+    .modal-close:hover {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .modal-body {
+      padding: 24px 28px;
+      overflow-y: auto;
+      flex: 1;
+    }
+
+    .modal-search {
+      width: 100%;
+      padding: 9px 14px;
+      font-size: 0.85rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: 8px;
+      outline: none;
+      margin-bottom: 20px;
+      font-family: inherit;
+      transition: border-color 0.2s;
+    }
+    .modal-search:focus { border-color: var(--accent); }
+    .modal-search::placeholder { color: var(--text-dim); }
+
+    .stage { margin-bottom: 22px; }
+    .stage:last-child { margin-bottom: 0; }
+
+    .stage-name {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: var(--accent);
+      margin-bottom: 10px;
+      padding-bottom: 6px;
+      border-bottom: 1px solid var(--border);
+    }
+
+    .lessons { list-style: none; }
+
+    .lessons li {
+      display: flex;
+      align-items: baseline;
+      gap: 12px;
+      padding: 7px 8px;
+      font-size: 0.88rem;
+      border-radius: 6px;
+      transition: background 0.15s;
+    }
+    .lessons li:hover { background: var(--bg); }
+
+    .lessons .n {
+      color: #475569;
+      font-variant-numeric: tabular-nums;
+      min-width: 22px;
+      font-size: 0.78rem;
+    }
+
+    .lessons a {
+      color: var(--text);
+      flex: 1;
+      text-decoration: none;
+      transition: color 0.15s;
+    }
+    .lessons a:hover { color: var(--accent); }
+
+    .no-results {
+      text-align: center;
+      color: var(--text-dim);
+      padding: 40px 0;
+      font-size: 0.9rem;
+    }
+
+    /* Footer */
+    footer {
+      text-align: center;
+      padding: 32px 0;
+      color: var(--text-dim);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+
+    @media (max-width: 480px) {
+      .container { padding: 0 20px; }
+      header { padding: 40px 0 32px; }
+      header h1 { font-size: 1.6rem; }
+      .course-grid { grid-template-columns: 1fr; }
+      .modal-overlay { padding: 16px; }
+      .modal { max-height: 85vh; }
+      .modal-header, .modal-body { padding: 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <p class="brand">AI 学习中心</p>
+    <h1>课程目录</h1>
+    <p class="sub">边学边做，每一课都有可运行的产出</p>
+    <input type="text" class="search" id="searchBox" placeholder="搜索课程或章节...">
+  </div>
+</header>
+
+<main>
+  <div class="container">
+    <div class="course-grid" id="courseGrid"></div>
+  </div>
+</main>
+
+<footer>
+  <div class="container">AI 学习中心 · 课程持续更新中</div>
+</footer>
+
+<!-- Modal 浮窗 -->
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal" id="modal">
+    <div class="modal-header">
+      <div class="modal-title-wrap">
+        <div class="modal-title" id="modalTitle"></div>
+        <div class="modal-sub" id="modalSub"></div>
+      </div>
+      <button class="modal-close" id="modalClose" aria-label="关闭">✕</button>
+    </div>
+    <div class="modal-body">
+      <input type="text" class="modal-search" id="modalSearch" placeholder="在章节内搜索...">
+      <div id="modalChapters"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+const COURSES = [
+  {
+    title: "AI Agent 2.0 基础",
+    tag: "已完结 · 4 阶段",
+    desc: "从零做出真能干活的 Agent 并部署上线。覆盖工具、记忆、流式、评测、生产化、RAG、多 Agent 全链路。",
+    stats: [{ big: "14", lbl: "节课" }, { big: "4", lbl: "阶段" }, { big: "~3h", lbl: "总时长" }],
+    gradient: "#1e3a8a, #0ea5e9",
+    path: "ai-agent-2.0",
+    stages: [
+      { name: "阶段一 · 基础", lessons: [
+        { n: "01", t: "什么是 AI Agent", f: "0001-what-is-an-ai-agent.html" },
+        { n: "02", t: "让 Agent 自己选工具", f: "0002-let-agent-choose-tools.html" },
+        { n: "03", t: "系统提示 + 最简记忆", f: "0003-system-prompt-and-memory.html" },
+        { n: "04", t: "长期记忆", f: "0004-long-term-memory.html" },
+        { n: "05", t: "封装 Agent 类 + 错误处理", f: "0005-agent-class-and-error-handling.html" },
+        { n: "06", t: "把 Agent 变成 Web 服务", f: "0006-agent-as-web-service.html" },
+      ]},
+      { name: "阶段二 · 能用", lessons: [
+        { n: "07", t: "Agent 评测", f: "0007-agent-evals.html" },
+        { n: "08", t: "流式输出", f: "0008-streaming-output.html" },
+      ]},
+      { name: "阶段三 · 生产化", lessons: [
+        { n: "09", t: "生产化部署", f: "0009-production-deployment.html" },
+        { n: "10", t: "切换到 Claude", f: "0010-switch-to-claude.html" },
+        { n: "11", t: "RAG 与向量记忆", f: "0011-rag-and-vector-memory.html" },
+      ]},
+      { name: "阶段四 · 进阶", lessons: [
+        { n: "12", t: "多 Agent 委托", f: "0012-multi-agent-handoff.html" },
+        { n: "13", t: "何时用 Agent / 何时用 Workflow", f: "0013-when-to-use-agent-vs-workflow.html" },
+        { n: "14", t: "项目实战（毕业设计）", f: "0014-capstone-project.html" },
+      ]}
+    ]
+  }
+];
+
+const courseGrid = document.getElementById('courseGrid');
+const searchBox = document.getElementById('searchBox');
+
+// Modal 元素
+const modalOverlay = document.getElementById('modalOverlay');
+const modalTitle = document.getElementById('modalTitle');
+const modalSub = document.getElementById('modalSub');
+const modalChapters = document.getElementById('modalChapters');
+const modalClose = document.getElementById('modalClose');
+const modalSearch = document.getElementById('modalSearch');
+
+let currentCourse = null;
+
+function renderCourses(filter = '') {
+  const q = filter.trim().toLowerCase();
+  courseGrid.innerHTML = '';
+  COURSES.forEach((course, idx) => {
+    // 搜索过滤：匹配课程标题或任意章节
+    const matchTitle = course.title.toLowerCase().includes(q);
+    const matchLessons = course.stages.some(s => s.lessons.some(l => l.t.toLowerCase().includes(q)));
+    if (q && !matchTitle && !matchLessons) return;
+
+    const totalLessons = course.stages.reduce((sum, s) => sum + s.lessons.length, 0);
+    const card = document.createElement('div');
+    card.className = 'course-card';
+    card.innerHTML = `
+      <div class="card-banner" style="background: linear-gradient(90deg, ${course.gradient || 'var(--accent), var(--accent-dark)'})"></div>
+      <div class="card-body">
+        <span class="tag">${course.tag}</span>
+        <h2 class="card-title">${course.title}</h2>
+        <p class="card-desc">${course.desc}</p>
+        <div class="stats">
+          ${course.stats.map(s => `<div class="stat"><div class="big">${s.big}</div><div class="lbl">${s.lbl}</div></div>`).join('')}
+        </div>
+        <button class="btn" data-idx="${idx}">
+          查看全部 ${totalLessons} 课
+          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
+        </button>
+      </div>
+    `;
+    courseGrid.appendChild(card);
+
+    card.querySelector('.btn').addEventListener('click', () => openModal(course, q));
+  });
+}
+
+function buildChaptersHtml(course, q) {
+  const stagesHtml = course.stages.map(stage => {
+    const lessons = q ? stage.lessons.filter(l => l.t.toLowerCase().includes(q)) : stage.lessons;
+    if (q && lessons.length === 0) return '';
+    return `
+      <div class="stage">
+        <div class="stage-name">${stage.name}</div>
+        <ul class="lessons">
+          ${lessons.map(l => `
+            <li>
+              <span class="n">${l.n}</span>
+              <a href="${course.path}/lessons/${l.f}">${l.t}</a>
+            </li>`).join('')}
+        </ul>
+      </div>`;
+  }).join('');
+  return stagesHtml || '<div class="no-results">没有匹配的章节</div>';
+}
+
+function openModal(course, initialFilter = '') {
+  currentCourse = course;
+  const totalLessons = course.stages.reduce((sum, s) => sum + s.lessons.length, 0);
+  modalTitle.textContent = course.title;
+  modalSub.textContent = `${course.tag} · 共 ${totalLessons} 课`;
+  modalSearch.value = initialFilter;
+  modalChapters.innerHTML = buildChaptersHtml(course, initialFilter);
+  modalOverlay.classList.add('open');
+  if (!initialFilter) setTimeout(() => modalSearch.focus(), 100);
+}
+
+function closeModal() {
+  modalOverlay.classList.remove('open');
+  currentCourse = null;
+}
+
+// Modal 事件
+modalClose.addEventListener('click', closeModal);
+modalOverlay.addEventListener('click', (e) => {
+  if (e.target === modalOverlay) closeModal();
+});
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && modalOverlay.classList.contains('open')) closeModal();
+});
+
+// Modal 内搜索
+modalSearch.addEventListener('input', (e) => {
+  if (currentCourse) {
+    modalChapters.innerHTML = buildChaptersHtml(currentCourse, e.target.value);
+  }
+});
+
+// 主页搜索
+searchBox.addEventListener('input', (e) => renderCourses(e.target.value));
+
+renderCourses();
+</script>
+
+</body>
+</html>
