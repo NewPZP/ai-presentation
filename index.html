@@ -1,493 +1,585 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>AI 学习中心</title>
-  <style>
-    :root {
-      --bg: #0f172a;
-      --card: #1e293b;
-      --border: #334155;
-      --text: #e2e8f0;
-      --text-muted: #94a3b8;
-      --text-dim: #64748b;
-      --accent: #38bdf8;
-      --accent-dark: #0ea5e9;
-      --overlay: rgba(15, 23, 42, 0.75);
-    }
+<html lang="zh-CN"><head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>个人主页 · 原型（3 个方案）</title>
+<!--
+  PROTOTYPE — throwaway UI exploration.
+  Question: "What should my personal homepage look like, with courses turned into works?"
+  Three structurally-different variants on one route, switchable via ?variant=A|B|C
+  and a floating bottom switcher. This is throwaway code, not production.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+  a { color: inherit; }
+  button { font-family: inherit; }
 
-    * { box-sizing: border-box; margin: 0; padding: 0; }
+  .variant { display: none; }
+  .variant.active { display: block; }
 
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-      line-height: 1.6;
-      -webkit-font-smoothing: antialiased;
-      min-height: 100vh;
-    }
+  /* ============ Switcher (prototype chrome, not part of the design) ============ */
+  .switcher {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 999;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 6px;
+    border-radius: 999px;
+    background: rgba(17, 17, 19, 0.92);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.35);
+    color: #fff;
+  }
+  .switcher button {
+    width: 36px; height: 36px;
+    border: none; border-radius: 999px;
+    background: transparent; color: #fff;
+    font-size: 20px; line-height: 1;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .switcher button:hover { background: rgba(255,255,255,0.14); }
+  .switcher .label {
+    min-width: 128px;
+    text-align: center;
+    font-size: 13px;
+    font-weight: 600;
+    padding: 0 8px;
+    white-space: nowrap;
+  }
+  .switcher .hint {
+    font-size: 11px;
+    color: #9a9a9f;
+    padding-right: 6px;
+    border-right: 1px solid rgba(255,255,255,0.16);
+    margin-right: 2px;
+    white-space: nowrap;
+  }
 
-    .container { max-width: 1040px; margin: 0 auto; padding: 0 28px; }
+  /* ============ Featured preview (置顶预告) ============ */
+  .preview-flag { margin: 0 0 8px; }
+  .preview-kicker { display: inline-flex; align-items: center; gap: 6px; font-size: 0.7rem; letter-spacing: 0.1em; font-weight: 700; text-transform: uppercase; color: #a96b48; background: #f5ece3; padding: 4px 12px; border-radius: 999px; }
+  .preview-kicker .dot { width: 6px; height: 6px; border-radius: 50%; background: #c17f59; animation: blink 1.4s ease-in-out infinite; }
+  @keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
+  .preview-title { font-weight: 800; letter-spacing: -0.01em; }
+  .preview-date { font-size: 0.8rem; color: #a96b48; font-weight: 600; white-space: nowrap; }
 
-    /* Header */
-    header { padding: 56px 0 40px; }
+  /* A — 编辑杂志：置顶横幅 */
+  .va .preview { display: flex; align-items: center; justify-content: space-between; gap: 28px; padding: 22px 28px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 12px; background: #fff; }
+  .va .preview .preview-body { flex: 1; }
+  .va .preview .preview-title { font-size: 1.25rem; margin: 8px 0 4px; }
+  .va .preview .preview-desc { color: var(--muted); font-size: 0.92rem; }
 
-    .brand {
-      font-size: 0.8rem;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-      margin-bottom: 12px;
-    }
+  /* B — 作品画廊：置顶大卡 */
+  .vb .preview { position: relative; display: flex; flex-direction: column; justify-content: flex-end; min-height: 300px; padding: 32px; border-radius: 18px; overflow: hidden; background: linear-gradient(150deg, #7c3a1e, #c17f59); }
+  .vb .preview .preview-kicker { background: rgba(255,255,255,0.2); color: #fff; }
+  .vb .preview .preview-kicker .dot { background: #fff; }
+  .vb .preview .preview-title { color: #fff; font-size: 1.9rem; line-height: 1.15; margin: 14px 0 8px; max-width: 560px; text-shadow: 0 1px 12px rgba(0,0,0,0.2); }
+  .vb .preview .preview-desc { color: rgba(255,255,255,0.88); max-width: 540px; }
+  .vb .preview .preview-date { color: #fff; }
 
-    header h1 {
-      font-size: 2rem;
-      font-weight: 700;
-      letter-spacing: -0.02em;
-      color: #f8fafc;
-      margin-bottom: 8px;
-    }
+  /* C — 个人品牌：置顶通知条 */
+  .vc .preview { display: flex; align-items: center; justify-content: space-between; gap: 20px; max-width: 760px; margin: 0 auto; padding: 16px 22px; border: 1px solid var(--line); border-radius: 14px; background: #fff; box-shadow: 0 10px 30px -18px rgba(44,36,27,0.25); }
+  .vc .preview .preview-body { text-align: left; }
+  .vc .preview .preview-title { font-size: 1.1rem; margin-top: 4px; }
 
-    .sub {
-      color: var(--text-muted);
-      font-size: 0.95rem;
-      margin-bottom: 24px;
-    }
+  /* ============ Shared modal ============ */
+  .modal-overlay {
+    display: none; position: fixed; inset: 0;
+    background: rgba(15, 17, 19, 0.6);
+    backdrop-filter: blur(4px);
+    z-index: 1000; align-items: center; justify-content: center; padding: 24px;
+  }
+  .modal-overlay.open { display: flex; }
+  .modal {
+    background: #fff; color: #241d15;
+    border-radius: 16px; width: 100%; max-width: 560px; max-height: 80vh;
+    display: flex; flex-direction: column; overflow: hidden;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.3);
+  }
+  .modal-header { padding: 22px 26px; border-bottom: 1px solid #eee6db; display: flex; justify-content: space-between; gap: 16px; }
+  .modal-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 2px; }
+  .modal-sub { font-size: 0.8rem; color: #8a7f73; }
+  .modal-close { width: 32px; height: 32px; border: 1px solid #e5ddd2; border-radius: 8px; background: transparent; cursor: pointer; font-size: 1rem; color: #8a7f73; }
+  .modal-close:hover { border-color: #c17f59; color: #c17f59; }
+  .modal-body { padding: 22px 26px; overflow-y: auto; flex: 1; }
+  .modal-search { width: 100%; padding: 10px 14px; font-size: 0.85rem; border: 1px solid #e5ddd2; border-radius: 8px; outline: none; margin-bottom: 18px; font-family: inherit; }
+  .modal-search:focus { border-color: #c17f59; }
+  .stage { margin-bottom: 20px; }
+  .stage-name { font-size: 11px; font-weight: 600; letter-spacing: 0.06em; color: #c17f59; margin-bottom: 8px; padding-bottom: 6px; border-bottom: 1px solid #eee6db; }
+  .lessons { list-style: none; }
+  .lessons li { display: flex; gap: 12px; align-items: baseline; padding: 6px 8px; border-radius: 6px; font-size: 0.88rem; }
+  .lessons li:hover { background: #faf6f0; }
+  .lessons .n { color: #b3a89b; font-variant-numeric: tabular-nums; min-width: 22px; font-size: 0.76rem; }
+  .lessons a { text-decoration: none; flex: 1; color: #241d15; }
+  .lessons a:hover { color: #c17f59; }
+  .no-results { text-align: center; color: #b3a89b; padding: 40px 0; font-size: 0.9rem; }
 
-    /* Search */
-    .search {
-      width: 100%;
-      max-width: 380px;
-      padding: 12px 16px;
-      font-size: 0.9rem;
-      background: var(--card);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 10px;
-      outline: none;
-      transition: border-color 0.2s;
-      font-family: inherit;
-    }
-    .search:focus { border-color: var(--accent); }
-    .search::placeholder { color: var(--text-dim); }
+  /* ============ Variant A — 编辑杂志 (Editorial) ============ */
+  .va { --bg: #faf7f2; --ink: #241d15; --muted: #7a6f63; --line: #e7dfd3; --accent: #c17f59; --accent-soft: #f0e4d9; }
+  .va { background: var(--bg); color: var(--ink); }
+  .va .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+  .va .serif { font-family: "Songti SC", "Noto Serif SC", Georgia, "Times New Roman", serif; }
+  .va .nav { display: flex; justify-content: space-between; align-items: center; padding: 28px 0; border-bottom: 1px solid var(--line); }
+  .va .nav .brand { font-weight: 700; font-size: 1rem; letter-spacing: 0.01em; }
+  .va .nav .links { display: flex; gap: 28px; }
+  .va .nav .links a { text-decoration: none; font-size: 0.9rem; color: var(--muted); }
+  .va .nav .links a:hover { color: var(--ink); }
+  .va .hero { padding: 96px 0 80px; display: grid; grid-template-columns: 1.35fr 1fr; gap: 56px; align-items: end; }
+  .va .hero h1 { font-size: clamp(3rem, 7vw, 5.5rem); line-height: 1.02; font-weight: 700; letter-spacing: -0.03em; }
+  .va .hero h1 em { font-style: normal; color: var(--accent); }
+  .va .hero .intro { color: var(--muted); }
+  .va .hero .intro p { margin-bottom: 16px; font-size: 1.05rem; }
+  .va .hero .cta { display: flex; gap: 12px; margin-top: 24px; }
+  .va .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 20px; border-radius: 8px; font-size: 0.9rem; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid transparent; }
+  .va .btn.solid { background: var(--ink); color: #fff; }
+  .va .btn.solid:hover { background: var(--accent); }
+  .va .btn.ghost { border-color: var(--line); color: var(--ink); background: transparent; }
+  .va .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .va .section { padding: 64px 0; }
+  .va .section-head { display: flex; align-items: baseline; gap: 24px; margin-bottom: 40px; }
+  .va .section-head .kicker { font-size: 0.75rem; letter-spacing: 0.2em; color: var(--accent); font-weight: 700; }
+  .va .section-head h2 { font-size: 2.25rem; font-weight: 700; letter-spacing: -0.02em; }
+  .va .about-grid { display: grid; grid-template-columns: 1fr 1.4fr; gap: 56px; }
+  .va .about-grid .lead { font-size: 1.4rem; line-height: 1.5; color: var(--ink); font-weight: 500; }
+  .va .about-grid .body p { color: var(--muted); margin-bottom: 14px; }
+  .va .work-row { display: grid; grid-template-columns: 72px 1fr auto; gap: 28px; align-items: center; padding: 36px 0; border-top: 1px solid var(--line); }
+  .va .work-row:last-child { border-bottom: 1px solid var(--line); }
+  .va .work-row .num { font-size: 1.6rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+  .va .work-row .bar { width: 6px; align-self: stretch; border-radius: 4px; }
+  .va .work-row .info .tag { display: inline-block; font-size: 0.72rem; letter-spacing: 0.06em; color: var(--accent); border: 1px solid var(--accent); padding: 2px 8px; border-radius: 4px; margin-bottom: 10px; }
+  .va .work-row .info h3 { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.01em; margin-bottom: 6px; }
+  .va .work-row .info p { color: var(--muted); font-size: 0.95rem; max-width: 640px; }
+  .va .work-row .meta { display: flex; gap: 18px; margin-top: 12px; color: var(--muted); font-size: 0.82rem; }
+  .va .work-row .open { text-decoration: none; font-size: 0.85rem; font-weight: 600; color: var(--ink); display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+  .va .work-row .open:hover { color: var(--accent); }
+  .va .contact { background: var(--accent-soft); border-radius: 16px; padding: 56px; text-align: center; }
+  .va .contact h2 { font-size: 2rem; margin-bottom: 10px; }
+  .va .contact p { color: var(--muted); margin-bottom: 24px; }
+  .va .footer { padding: 40px 0; text-align: center; color: var(--muted); font-size: 0.82rem; }
 
-    /* Main */
-    main { padding: 0 0 96px; }
+  /* ============ Variant B — 作品画廊 (Gallery) ============ */
+  .vb { --bg: #101214; --ink: #f4f1ec; --muted: #9a9389; --line: #26282b; }
+  .vb { background: var(--bg); color: var(--ink); }
+  .vb .wrap { max-width: 1200px; margin: 0 auto; padding: 0 28px; }
+  .vb .top { padding: 56px 0 40px; display: flex; justify-content: space-between; align-items: flex-end; gap: 32px; }
+  .vb .top .name { font-size: 1.15rem; font-weight: 700; }
+  .vb .top .tagline { color: var(--muted); font-size: 0.95rem; }
+  .vb .works-head { padding: 24px 0 32px; }
+  .vb .works-head h1 { font-size: clamp(2.2rem, 5vw, 4rem); letter-spacing: -0.03em; font-weight: 800; line-height: 1.05; }
+  .vb .works-head h1 span { color: #c17f59; }
+  .vb .masonry { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; padding-bottom: 72px; }
+  .vb .tile { position: relative; border-radius: 16px; overflow: hidden; min-height: 340px; display: flex; flex-direction: column; justify-content: flex-end; padding: 28px; cursor: pointer; transition: transform 0.2s; }
+  .vb .tile:hover { transform: translateY(-4px); }
+  .vb .tile .tag { position: absolute; top: 22px; left: 22px; font-size: 0.72rem; letter-spacing: 0.05em; padding: 4px 10px; border-radius: 999px; background: rgba(0,0,0,0.28); color: #fff; backdrop-filter: blur(4px); }
+  .vb .tile h3 { font-size: 1.6rem; font-weight: 700; color: #fff; line-height: 1.2; margin-bottom: 8px; text-shadow: 0 1px 8px rgba(0,0,0,0.25); }
+  .vb .tile p { color: rgba(255,255,255,0.85); font-size: 0.9rem; max-width: 520px; text-shadow: 0 1px 6px rgba(0,0,0,0.25); }
+  .vb .tile .meta { display: flex; gap: 16px; margin-top: 14px; color: rgba(255,255,255,0.85); font-size: 0.8rem; }
+  .vb .tile .open { margin-top: 18px; display: inline-flex; align-items: center; gap: 6px; font-size: 0.85rem; font-weight: 600; color: #fff; }
+  .vb .about { padding: 56px 0; border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr 1fr; gap: 48px; }
+  .vb .about h2 { font-size: 1.8rem; margin-bottom: 16px; }
+  .vb .about p { color: var(--muted); margin-bottom: 12px; }
+  .vb .contact { padding: 48px 0 72px; }
+  .vb .contact .box { border: 1px solid var(--line); border-radius: 14px; padding: 40px; text-align: center; }
+  .vb .contact .box h2 { font-size: 1.8rem; margin-bottom: 8px; }
+  .vb .contact .box p { color: var(--muted); margin-bottom: 22px; }
+  .vb .btn { display: inline-flex; padding: 12px 22px; border-radius: 8px; background: #fff; color: #101214; font-weight: 700; text-decoration: none; font-size: 0.9rem; }
+  .vb .footer { padding: 28px 0 40px; text-align: center; color: var(--muted); font-size: 0.8rem; }
 
-    /* Course Grid - 自适应 */
-    .course-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-      gap: 20px;
-    }
+  /* ============ Variant C — 个人品牌 (Narrative) ============ */
+  .vc { --bg: #fffdfa; --ink: #241d15; --muted: #7a6f63; --line: #eee6db; --accent: #c17f59; --accent-soft: #f5ece3; }
+  .vc { background: var(--bg); color: var(--ink); }
+  .vc .wrap { max-width: 1120px; margin: 0 auto; padding: 0 32px; }
+  .vc .nav { display: flex; justify-content: space-between; align-items: center; padding: 24px 0; }
+  .vc .nav .brand { font-weight: 700; }
+  .vc .nav .links { display: flex; gap: 26px; }
+  .vc .nav .links a { text-decoration: none; color: var(--muted); font-size: 0.9rem; }
+  .vc .nav .links a:hover { color: var(--ink); }
+  .vc .hero { text-align: center; padding: 88px 0 56px; }
+  .vc .avatar { width: 96px; height: 96px; border-radius: 50%; margin: 0 auto 24px; display: flex; align-items: center; justify-content: center; background: var(--accent); color: #fff; font-size: 2.4rem; font-weight: 700; }
+  .vc .hero h1 { font-size: clamp(2.4rem, 5.5vw, 4rem); font-weight: 800; letter-spacing: -0.03em; margin-bottom: 12px; }
+  .vc .hero .pos { font-size: 1.15rem; color: var(--accent); font-weight: 600; margin-bottom: 12px; }
+  .vc .hero p { color: var(--muted); max-width: 560px; margin: 0 auto; }
+  .vc .hero .cta { display: flex; gap: 12px; justify-content: center; margin-top: 28px; }
+  .vc .btn { display: inline-flex; align-items: center; gap: 8px; padding: 12px 22px; border-radius: 999px; font-size: 0.9rem; font-weight: 600; text-decoration: none; cursor: pointer; border: 1px solid transparent; }
+  .vc .btn.solid { background: var(--accent); color: #fff; }
+  .vc .btn.solid:hover { background: #a96b48; }
+  .vc .btn.ghost { border-color: var(--line); color: var(--ink); background: transparent; }
+  .vc .btn.ghost:hover { border-color: var(--accent); color: var(--accent); }
+  .vc .stats { display: flex; justify-content: center; gap: 56px; padding: 40px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+  .vc .stats .s .big { font-size: 2rem; font-weight: 800; line-height: 1; }
+  .vc .stats .s .lbl { font-size: 0.78rem; color: var(--muted); margin-top: 4px; }
+  .vc .about { padding: 72px 0; max-width: 720px; margin: 0 auto; }
+  .vc .about h2 { font-size: 1.8rem; text-align: center; margin-bottom: 20px; }
+  .vc .about p { color: var(--muted); margin-bottom: 14px; }
+  .vc .chapter { border-radius: 20px; overflow: hidden; margin-bottom: 40px; }
+  .vc .chapter .band { height: 220px; display: flex; align-items: flex-end; padding: 28px 36px; }
+  .vc .chapter .band h3 { font-size: 1.9rem; font-weight: 800; color: #fff; line-height: 1.15; text-shadow: 0 1px 12px rgba(0,0,0,0.2); }
+  .vc .chapter .body { padding: 32px 36px; border: 1px solid var(--line); border-top: none; border-radius: 0 0 20px 20px; }
+  .vc .chapter .body .tag { display: inline-block; font-size: 0.72rem; letter-spacing: 0.05em; color: var(--accent); border: 1px solid var(--accent); padding: 2px 8px; border-radius: 4px; margin-bottom: 12px; }
+  .vc .chapter .body p { color: var(--muted); margin-bottom: 16px; }
+  .vc .chapter .body .meta { display: flex; gap: 20px; margin-bottom: 20px; color: var(--muted); font-size: 0.84rem; }
+  .vc .works-head { text-align: center; padding: 24px 0 40px; }
+  .vc .works-head h2 { font-size: 2rem; }
+  .vc .contact { text-align: center; padding: 64px 0 80px; }
+  .vc .contact h2 { font-size: 2rem; margin-bottom: 10px; }
+  .vc .contact p { color: var(--muted); margin-bottom: 24px; }
+  .vc .footer { padding: 32px 0 48px; text-align: center; color: var(--muted); font-size: 0.82rem; border-top: 1px solid var(--line); }
 
-    /* Compact Course Card */
-    .course-card {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      overflow: hidden;
-      display: flex;
-      flex-direction: column;
-      transition: border-color 0.2s, transform 0.2s;
-    }
-    .course-card:hover {
-      border-color: var(--accent);
-      transform: translateY(-2px);
-    }
-
-    .card-banner {
-      height: 6px;
-      background: linear-gradient(90deg, var(--accent), var(--accent-dark));
-    }
-
-    .card-body {
-      padding: 22px;
-      display: flex;
-      flex-direction: column;
-      flex: 1;
-      gap: 14px;
-    }
-
-    .tag {
-      display: inline-block;
-      font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.08em;
-      text-transform: uppercase;
-      color: var(--accent);
-      border: 1px solid var(--accent);
-      padding: 2px 8px;
-      border-radius: 4px;
-      align-self: flex-start;
-    }
-
-    .card-title {
-      font-size: 1.25rem;
-      font-weight: 700;
-      letter-spacing: -0.01em;
-      color: #f8fafc;
-      line-height: 1.3;
-    }
-
-    .card-desc {
-      font-size: 0.85rem;
-      color: var(--text-muted);
-      line-height: 1.55;
-      flex: 1;
-    }
-
-    .stats {
-      display: flex;
-      gap: 18px;
-      padding-top: 12px;
-      border-top: 1px solid var(--border);
-    }
-
-    .stat .big {
-      font-size: 1.2rem;
-      font-weight: 700;
-      color: var(--accent);
-      line-height: 1;
-    }
-    .stat .lbl {
-      font-size: 0.68rem;
-      color: var(--text-dim);
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      margin-top: 3px;
-    }
-
-    .btn {
-      width: 100%;
-      padding: 10px 16px;
-      font-size: 0.85rem;
-      border: 1px solid var(--accent);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--accent);
-      cursor: pointer;
-      font-family: inherit;
-      font-weight: 600;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      gap: 8px;
-      transition: all 0.2s;
-    }
-    .btn:hover { background: var(--accent); color: var(--bg); }
-    .btn .chev { transition: transform 0.25s; }
-
-    /* Modal 浮窗 */
-    .modal-overlay {
-      display: none;
-      position: fixed;
-      inset: 0;
-      background: var(--overlay);
-      backdrop-filter: blur(4px);
-      z-index: 100;
-      align-items: center;
-      justify-content: center;
-      padding: 24px;
-      animation: fadeIn 0.2s ease;
-    }
-    .modal-overlay.open { display: flex; }
-
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-
-    .modal {
-      background: var(--card);
-      border: 1px solid var(--border);
-      border-radius: 16px;
-      width: 100%;
-      max-width: 560px;
-      max-height: 80vh;
-      display: flex;
-      flex-direction: column;
-      overflow: hidden;
-      animation: slideUp 0.25s ease;
-    }
-
-    @keyframes slideUp {
-      from { transform: translateY(20px); opacity: 0; }
-      to { transform: translateY(0); opacity: 1; }
-    }
-
-    .modal-header {
-      padding: 24px 28px;
-      border-bottom: 1px solid var(--border);
-      display: flex;
-      align-items: flex-start;
-      justify-content: space-between;
-      gap: 16px;
-    }
-
-    .modal-title-wrap { flex: 1; }
-    .modal-title {
-      font-size: 1.3rem;
-      font-weight: 700;
-      color: #f8fafc;
-      margin-bottom: 4px;
-    }
-    .modal-sub {
-      font-size: 0.8rem;
-      color: var(--text-muted);
-    }
-
-    .modal-close {
-      flex-shrink: 0;
-      width: 32px;
-      height: 32px;
-      border: 1px solid var(--border);
-      border-radius: 8px;
-      background: transparent;
-      color: var(--text-muted);
-      cursor: pointer;
-      font-size: 1.1rem;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      transition: all 0.15s;
-    }
-    .modal-close:hover {
-      border-color: var(--accent);
-      color: var(--accent);
-    }
-
-    .modal-body {
-      padding: 24px 28px;
-      overflow-y: auto;
-      flex: 1;
-    }
-
-    .modal-search {
-      width: 100%;
-      padding: 9px 14px;
-      font-size: 0.85rem;
-      background: var(--bg);
-      border: 1px solid var(--border);
-      color: var(--text);
-      border-radius: 8px;
-      outline: none;
-      margin-bottom: 20px;
-      font-family: inherit;
-      transition: border-color 0.2s;
-    }
-    .modal-search:focus { border-color: var(--accent); }
-    .modal-search::placeholder { color: var(--text-dim); }
-
-    .stage { margin-bottom: 22px; }
-    .stage:last-child { margin-bottom: 0; }
-
-    .stage-name {
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      color: var(--accent);
-      margin-bottom: 10px;
-      padding-bottom: 6px;
-      border-bottom: 1px solid var(--border);
-    }
-
-    .lessons { list-style: none; }
-
-    .lessons li {
-      display: flex;
-      align-items: baseline;
-      gap: 12px;
-      padding: 7px 8px;
-      font-size: 0.88rem;
-      border-radius: 6px;
-      transition: background 0.15s;
-    }
-    .lessons li:hover { background: var(--bg); }
-
-    .lessons .n {
-      color: #475569;
-      font-variant-numeric: tabular-nums;
-      min-width: 22px;
-      font-size: 0.78rem;
-    }
-
-    .lessons a {
-      color: var(--text);
-      flex: 1;
-      text-decoration: none;
-      transition: color 0.15s;
-    }
-    .lessons a:hover { color: var(--accent); }
-
-    .no-results {
-      text-align: center;
-      color: var(--text-dim);
-      padding: 40px 0;
-      font-size: 0.9rem;
-    }
-
-    /* Footer */
-    footer {
-      text-align: center;
-      padding: 32px 0;
-      color: var(--text-dim);
-      font-size: 0.85rem;
-      border-top: 1px solid var(--border);
-    }
-
-    @media (max-width: 480px) {
-      .container { padding: 0 20px; }
-      header { padding: 40px 0 32px; }
-      header h1 { font-size: 1.6rem; }
-      .course-grid { grid-template-columns: 1fr; }
-      .modal-overlay { padding: 16px; }
-      .modal { max-height: 85vh; }
-      .modal-header, .modal-body { padding: 20px; }
-    }
-  </style>
+  @media (max-width: 720px) {
+    .va .hero, .va .about-grid { grid-template-columns: 1fr; gap: 32px; }
+    .va .work-row { grid-template-columns: 1fr; gap: 16px; }
+    .va .work-row .bar { width: 100%; height: 6px; }
+    .vb .masonry { grid-template-columns: 1fr; }
+    .vb .about { grid-template-columns: 1fr; }
+    .vb .top { flex-direction: column; align-items: flex-start; }
+    .va .preview, .vc .preview { flex-direction: column; align-items: flex-start; gap: 12px; }
+    .vb .preview { min-height: 260px; padding: 24px; }
+    .vc .stats { gap: 32px; }
+  }
+</style>
 </head>
 <body>
 
-<header>
-  <div class="container">
-    <p class="brand">AI 学习中心</p>
-    <h1>课程目录</h1>
-    <p class="sub">边学边做，每一课都有可运行的产出</p>
-    <input type="text" class="search" id="searchBox" placeholder="搜索课程或章节...">
+<!-- ============ Variant A — 编辑杂志 ============ -->
+<section class="variant va active" id="variant-a">
+  <div class="wrap">
+    <nav class="nav">
+      <span class="brand">你的名字</span>
+      <div class="links">
+        <a href="#va-works">作品</a>
+        <a href="#va-about">关于</a>
+        <a href="#va-contact">联系</a>
+      </div>
+    </nav>
+
+    <header class="hero">
+      <h1 class="serif">你好，我是<em>阿票</em>。</h1>
+      <div class="intro">
+        <p style="position: relative;">记录我驯服ai的过程。分享给大家.....</p>
+        <div class="cta">
+          <a class="btn solid" href="#va-works">浏览作品</a>
+          <a class="btn ghost" href="#va-contact">联系我</a>
+        </div>
+      </div>
+    </header>
+
+    <section class="section" id="va-about">
+      <div class="section-head">
+        <span class="kicker">ABOUT</span>
+        <h2>关于我</h2>
+      </div>
+      <div class="about-grid">
+        
+        <div class="body">
+          <p>西电毕业，目前在杭州定居，老家温州。</p>
+          <p>深感ai的浪潮影响了各行各业，是危机也是挑战...</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="section" id="va-works">
+      <div class="section-head">
+        <span class="kicker">WORKS</span>
+        <h2>作品</h2>
+      </div>
+      <div class="preview" id="va-preview">
+        <div class="preview-body">
+          <span class="preview-kicker"><span class="dot"></span>最新预告 · 即将上线</span>
+          <div class="preview-title">多 Agent 协作实战</div>
+          <div class="preview-desc">定制自己的agent团队，多agent battle头脑风暴。</div>
+        </div>
+        <span class="preview-date">预计 2026 年 10 月上线</span>
+      </div>
+      <div class="works" data-mode="a"></div>
+    </section>
+
+    <section class="section" id="va-contact">
+      <div class="contact">
+        <h2>想聊聊？</h2>
+        <p>欢迎来信交流，或约一杯咖啡。</p>
+        <a class="btn solid" href="mailto:hello@example.com">pan.zhipiao@qq.com</a>
+      </div>
+    </section>
+
+    <footer class="footer">© 2026 你的名字 · 个人主页</footer>
   </div>
-</header>
+</section>
 
-<main>
-  <div class="container">
-    <div class="course-grid" id="courseGrid"></div>
+<!-- ============ Variant B — 作品画廊 ============ -->
+<section class="variant vb" id="variant-b">
+  <div class="wrap">
+    <header class="top">
+      <span class="name">你的名字</span>
+      <span class="tagline">AI 工程 · 把想法做成能跑的作品</span>
+    </header>
+
+    <section class="works-head" id="vb-works">
+      <h1>我的<span>作品</span>。</h1>
+    </section>
+
+    <div class="preview" id="vb-preview">
+      <span class="preview-kicker"><span class="dot"></span>最新预告 · 即将上线</span>
+      <div class="preview-title">多 Agent 协作实战</div>
+      <div class="preview-desc">把 Agent 当成团队来管：规划、委托、验收，一次讲透。</div>
+      <span class="preview-date">预计 2026 年 10 月上线</span>
+    </div>
+
+    <div class="masonry works" data-mode="b"></div>
+
+    <section class="about" id="vb-about">
+      <h2>关于我</h2>
+      <div>
+        <p>我做 AI 工程方向的内容，专注把 Agent、Skill 与工作流这些“听起来玄乎”的东西，变成一套可以复用的方法论。</p>
+        <p>下面这些作品，每一件都是一次完整的实践，而不是一个 demo 截图。</p>
+      </div>
+    </section>
+
+    <section class="contact" id="vb-contact">
+      <div class="box">
+        <h2>想一起做点什么？</h2>
+        <p>欢迎来信交流想法与合作。</p>
+        <a class="btn" href="mailto:hello@example.com">发送邮件</a>
+      </div>
+    </section>
+
+    <footer class="footer">© 2026 你的名字</footer>
   </div>
-</main>
+</section>
 
-<footer>
-  <div class="container">AI 学习中心 · 课程持续更新中</div>
-</footer>
+<!-- ============ Variant C — 个人品牌 ============ -->
+<section class="variant vc" id="variant-c">
+  <div class="wrap">
+    <nav class="nav">
+      <span class="brand">你的名字</span>
+      <div class="links">
+        <a href="#vc-works">作品</a>
+        <a href="#vc-about">关于</a>
+        <a href="#vc-contact">联系</a>
+      </div>
+    </nav>
 
-<!-- Modal 浮窗 -->
+    <header class="hero">
+      <div class="avatar">你</div>
+      <h1>你的名字</h1>
+      <div class="pos">AI 工程创作者</div>
+      <p>把复杂的 Agent 与工作流拆开讲透，再把它们做成一个个真正能运行的作品。</p>
+      <div class="cta">
+        <a class="btn solid" href="#vc-works">浏览作品</a>
+        <a class="btn ghost" href="#vc-contact">联系我</a>
+      </div>
+    </header>
+
+    <div class="stats">
+      <div class="s"><div class="big">2</div><div class="lbl">作品</div></div>
+      <div class="s"><div class="big">22</div><div class="lbl">总课时</div></div>
+      <div class="s"><div class="big">8</div><div class="lbl">阶段</div></div>
+    </div>
+
+    <section class="about" id="vc-about">
+      <h2>关于我</h2>
+      <p>我相信“做出来才算数”。这里的每一件作品都对应一条可以跟着走的完整路径——从需求拆解、原型设计，到实现、调试与交付。</p>
+      <p>如果你也正在把 AI 能力落进真实项目里，希望这些内容能给你一点可复用的抓手。</p>
+    </section>
+
+    <section id="vc-works">
+      <div class="works-head"><h2>作品</h2></div>
+      <div class="preview" id="vc-preview">
+        <div class="preview-body">
+          <span class="preview-kicker"><span class="dot"></span>最新预告</span>
+          <div class="preview-title">多 Agent 协作实战 · 即将上线</div>
+        </div>
+        <span class="preview-date">2026 年 10 月</span>
+      </div>
+      <div class="works" data-mode="c"></div>
+    </section>
+
+    <section class="contact" id="vc-contact">
+      <h2>想聊聊？</h2>
+      <p>欢迎来信交流，或约一杯咖啡。</p>
+      <a class="btn solid" href="mailto:hello@example.com">hello@example.com</a>
+    </section>
+
+    <footer class="footer">© 2026 你的名字 · 个人主页</footer>
+  </div>
+</section>
+
+<!-- ============ Shared modal ============ -->
 <div class="modal-overlay" id="modalOverlay">
-  <div class="modal" id="modal">
+  <div class="modal">
     <div class="modal-header">
-      <div class="modal-title-wrap">
+      <div>
         <div class="modal-title" id="modalTitle"></div>
         <div class="modal-sub" id="modalSub"></div>
       </div>
       <button class="modal-close" id="modalClose" aria-label="关闭">✕</button>
     </div>
     <div class="modal-body">
-      <input type="text" class="modal-search" id="modalSearch" placeholder="在章节内搜索...">
+      <input type="text" class="modal-search" id="modalSearch" placeholder="在作品内搜索...">
       <div id="modalChapters"></div>
     </div>
   </div>
 </div>
 
+<!-- ============ Switcher ============ -->
+<div class="switcher" id="switcher">
+  <button id="swPrev" aria-label="上一个方案">‹</button>
+  <span class="label" id="swLabel">A — 编辑杂志</span>
+  <button id="swNext" aria-label="下一个方案">›</button>
+</div>
+
 <script src="courses.js"></script>
 <script>
-const courseGrid = document.getElementById('courseGrid');
-const searchBox = document.getElementById('searchBox');
+  const VARIANTS = [
+    { key: 'A', name: '编辑杂志', el: document.getElementById('variant-a') },
+    { key: 'B', name: '作品画廊', el: document.getElementById('variant-b') },
+    { key: 'C', name: '个人品牌', el: document.getElementById('variant-c') },
+  ];
 
-// Modal 元素
-const modalOverlay = document.getElementById('modalOverlay');
-const modalTitle = document.getElementById('modalTitle');
-const modalSub = document.getElementById('modalSub');
-const modalChapters = document.getElementById('modalChapters');
-const modalClose = document.getElementById('modalClose');
-const modalSearch = document.getElementById('modalSearch');
-
-let currentCourse = null;
-
-function renderCourses(filter = '') {
-  const q = filter.trim().toLowerCase();
-  courseGrid.innerHTML = '';
-  COURSES.forEach((course, idx) => {
-    // 搜索过滤：匹配课程标题或任意章节
-    const matchTitle = course.title.toLowerCase().includes(q);
-    const matchLessons = course.stages.some(s => s.lessons.some(l => l.t.toLowerCase().includes(q)));
-    if (q && !matchTitle && !matchLessons) return;
-
-    const totalLessons = course.stages.reduce((sum, s) => sum + s.lessons.length, 0);
-    const card = document.createElement('div');
-    card.className = 'course-card';
-    card.innerHTML = `
-      <div class="card-banner" style="background: linear-gradient(90deg, ${course.gradient || 'var(--accent), var(--accent-dark)'})"></div>
-      <div class="card-body">
-        <span class="tag">${course.tag}</span>
-        <h2 class="card-title">${course.title}</h2>
-        <p class="card-desc">${course.desc}</p>
-        <div class="stats">
-          ${course.stats.map(s => `<div class="stat"><div class="big">${s.big}</div><div class="lbl">${s.lbl}</div></div>`).join('')}
-        </div>
-        <button class="btn" data-idx="${idx}">
-          查看全部 ${totalLessons} 课
-          <svg class="chev" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="9 18 15 12 9 6"/></svg>
-        </button>
-      </div>
-    `;
-    courseGrid.appendChild(card);
-
-    card.querySelector('.btn').addEventListener('click', () => openModal(course, q));
-  });
-}
-
-function buildChaptersHtml(course, q) {
-  const stagesHtml = course.stages.map(stage => {
-    const lessons = q ? stage.lessons.filter(l => l.t.toLowerCase().includes(q)) : stage.lessons;
-    if (q && lessons.length === 0) return '';
-    return `
-      <div class="stage">
-        <div class="stage-name">${stage.name}</div>
-        <ul class="lessons">
-          ${lessons.map(l => `
-            <li>
-              <span class="n">${l.n}</span>
-              <a href="${course.path}/lessons/${l.f}">${l.t}</a>
-            </li>`).join('')}
-        </ul>
-      </div>`;
-  }).join('');
-  return stagesHtml || '<div class="no-results">没有匹配的章节</div>';
-}
-
-function openModal(course, initialFilter = '') {
-  currentCourse = course;
-  const totalLessons = course.stages.reduce((sum, s) => sum + s.lessons.length, 0);
-  modalTitle.textContent = course.title;
-  modalSub.textContent = `${course.tag} · 共 ${totalLessons} 课`;
-  modalSearch.value = initialFilter;
-  modalChapters.innerHTML = buildChaptersHtml(course, initialFilter);
-  modalOverlay.classList.add('open');
-  if (!initialFilter) setTimeout(() => modalSearch.focus(), 100);
-}
-
-function closeModal() {
-  modalOverlay.classList.remove('open');
-  currentCourse = null;
-}
-
-// Modal 事件
-modalClose.addEventListener('click', closeModal);
-modalOverlay.addEventListener('click', (e) => {
-  if (e.target === modalOverlay) closeModal();
-});
-document.addEventListener('keydown', (e) => {
-  if (e.key === 'Escape' && modalOverlay.classList.contains('open')) closeModal();
-});
-
-// Modal 内搜索
-modalSearch.addEventListener('input', (e) => {
-  if (currentCourse) {
-    modalChapters.innerHTML = buildChaptersHtml(currentCourse, e.target.value);
+  // ---- data helpers ----
+  function totalLessons(c) { return c.stages.reduce((s, x) => s + x.lessons.length, 0); }
+  function totalStages(c) { return c.stages.length; }
+  function totalMinutes(c) {
+    const m = c.stats.find(s => /min/i.test(s.big));
+    return m ? m.big.replace('~', '') : '';
   }
-});
 
-// 主页搜索
-searchBox.addEventListener('input', (e) => renderCourses(e.target.value));
+  // ---- render works per variant mode ----
+  function renderA(container) {
+    container.innerHTML = COURSES.map((c, i) => `
+      <div class="work-row">
+        <span class="num">${String(i + 1).padStart(2, '0')}</span>
+        <div class="info">
+          <span class="tag">${c.tag}</span>
+          <h3>${c.title}</h3>
+          <p>${c.desc}</p>
+          <div class="meta">
+            <span>${totalLessons(c)} 课</span>
+            <span>${totalStages(c)} 阶段</span>
+            <span>${totalMinutes(c)}</span>
+          </div>
+        </div>
+        <a class="open" href="#" data-idx="${i}">查看作品 →</a>
+      </div>
+    `).join('');
+  }
 
-renderCourses();
+  function renderB(container) {
+    container.innerHTML = COURSES.map((c, i) => `
+      <div class="tile" style="background: linear-gradient(160deg, ${c.gradient});" data-idx="${i}">
+        <span class="tag">${c.tag}</span>
+        <h3>${c.title}</h3>
+        <p>${c.desc}</p>
+        <div class="meta">
+          <span>${totalLessons(c)} 课</span>
+          <span>${totalStages(c)} 阶段</span>
+          <span>${totalMinutes(c)}</span>
+        </div>
+        <span class="open">查看作品 →</span>
+      </div>
+    `).join('');
+  }
+
+  function renderC(container) {
+    container.innerHTML = COURSES.map((c, i) => `
+      <div class="chapter">
+        <div class="band" style="background: linear-gradient(140deg, ${c.gradient});">
+          <h3>${c.title}</h3>
+        </div>
+        <div class="body">
+          <span class="tag">${c.tag}</span>
+          <p>${c.desc}</p>
+          <div class="meta">
+            <span>${totalLessons(c)} 课</span>
+            <span>${totalStages(c)} 阶段</span>
+            <span>${totalMinutes(c)}</span>
+          </div>
+          <a class="btn solid" href="#" data-idx="${i}">查看作品</a>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  const renderers = { a: renderA, b: renderB, c: renderC };
+  document.querySelectorAll('.works').forEach(el => renderers[el.dataset.mode](el));
+
+  // ---- modal ----
+  const overlay = document.getElementById('modalOverlay');
+  const modalTitle = document.getElementById('modalTitle');
+  const modalSub = document.getElementById('modalSub');
+  const modalChapters = document.getElementById('modalChapters');
+  const modalSearch = document.getElementById('modalSearch');
+  let current = null;
+
+  function chaptersHtml(c, q) {
+    const html = c.stages.map(st => {
+      const lessons = q ? st.lessons.filter(l => l.t.toLowerCase().includes(q)) : st.lessons;
+      if (q && !lessons.length) return '';
+      return `<div class="stage"><div class="stage-name">${st.name}</div><ul class="lessons">` +
+        lessons.map(l => `<li><span class="n">${l.n}</span><a href="${c.path}/lessons/${l.f}">${l.t}</a></li>`).join('') +
+        `</ul></div>`;
+    }).join('');
+    return html || '<div class="no-results">没有匹配的内容</div>';
+  }
+
+  function openModal(idx, q) {
+    const c = COURSES[idx];
+    current = c;
+    modalTitle.textContent = c.title;
+    modalSub.textContent = `${c.tag} · 共 ${totalLessons(c)} 课`;
+    modalSearch.value = q || '';
+    modalChapters.innerHTML = chaptersHtml(c, q || '');
+    overlay.classList.add('open');
+    if (!q) setTimeout(() => modalSearch.focus(), 60);
+  }
+  function closeModal() { overlay.classList.remove('open'); current = null; }
+
+  document.addEventListener('click', e => {
+    const t = e.target.closest('[data-idx]');
+    if (t) { e.preventDefault(); openModal(Number(t.dataset.idx)); }
+  });
+  document.getElementById('modalClose').addEventListener('click', closeModal);
+  overlay.addEventListener('click', e => { if (e.target === overlay) closeModal(); });
+  modalSearch.addEventListener('input', e => {
+    if (current) modalChapters.innerHTML = chaptersHtml(current, e.target.value);
+  });
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+  });
+
+  // ---- switcher ----
+  const label = document.getElementById('swLabel');
+  let idx = 0;
+
+  function apply(i) {
+    idx = (i + VARIANTS.length) % VARIANTS.length;
+    VARIANTS.forEach(v => v.el.classList.toggle('active', v === VARIANTS[idx]));
+    label.textContent = `${VARIANTS[idx].key} — ${VARIANTS[idx].name}`;
+    history.replaceState(null, '', '?variant=' + VARIANTS[idx].key);
+  }
+
+  const fromUrl = new URLSearchParams(location.search).get('variant');
+  const startIdx = Math.max(0, VARIANTS.findIndex(v => v.key === (fromUrl || 'A')));
+  apply(startIdx);
+
+  document.getElementById('swPrev').addEventListener('click', () => apply(idx - 1));
+  document.getElementById('swNext').addEventListener('click', () => apply(idx + 1));
+  document.addEventListener('keydown', e => {
+    const tag = (document.activeElement || {}).tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA' || (document.activeElement || {}).isContentEditable) return;
+    if (e.key === 'ArrowLeft') apply(idx - 1);
+    if (e.key === 'ArrowRight') apply(idx + 1);
+  });
 </script>
 
-</body>
-</html>
+
+
+</body></html>
