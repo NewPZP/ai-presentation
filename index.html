@@ -220,9 +220,9 @@
     </nav>
 
     <header class="hero">
-      <h1 class="serif">你好，我是<em>阿票</em>。</h1>
+      <h1 class="serif"><span data-profile="heroGreeting"></span><em data-profile="name"></em>。</h1>
       <div class="intro">
-        <p style="position: relative;">记录我驯服ai的过程。分享给大家.....</p>
+        <p style="position: relative;" data-profile="heroIntro"></p>
         <div class="cta">
           <a class="btn solid" href="#va-works">浏览作品</a>
           <a class="btn ghost" href="#va-contact">联系我</a>
@@ -237,7 +237,7 @@
       </div>
       <div class="about-grid">
         
-        <div class="body">
+        <div class="body" data-profile-about>
           <p>西电毕业，目前在杭州定居，老家温州。</p>
           <p>深感ai的浪潮影响了各行各业，是危机也是挑战...</p>
         </div>
@@ -251,24 +251,24 @@
       </div>
       <div class="preview" id="va-preview">
         <div class="preview-body">
-          <span class="preview-kicker"><span class="dot"></span>最新预告 · 即将上线</span>
-          <div class="preview-title">多 Agent 协作实战</div>
-          <div class="preview-desc">定制自己的agent团队，多agent battle头脑风暴。</div>
+          <span class="preview-kicker"><span class="dot"></span><span data-profile="preview.kicker"></span></span>
+          <div class="preview-title" data-profile="preview.title"></div>
+          <div class="preview-desc" data-profile="preview.desc"></div>
         </div>
-        <span class="preview-date">预计 2026 年 10 月上线</span>
+        <span class="preview-date" data-profile="preview.date"></span>
       </div>
       <div class="works" data-mode="a"></div>
     </section>
 
     <section class="section" id="va-contact">
       <div class="contact">
-        <h2>想聊聊？</h2>
-        <p>欢迎来信交流，或约一杯咖啡。</p>
-        <a class="btn solid" href="mailto:hello@example.com">pan.zhipiao@qq.com</a>
+        <h2 data-profile="contact.title"></h2>
+        <p data-profile="contact.desc"></p>
+        <a class="btn solid" href="mailto:hello@example.com" data-profile-email data-profile="email"></a>
       </div>
     </section>
 
-    <footer class="footer">© 2026 你的名字 · 个人主页</footer>
+    <footer class="footer" data-profile="footer"></footer>
   </div>
 </section>
 
@@ -276,8 +276,8 @@
 <section class="variant vb" id="variant-b">
   <div class="wrap">
     <header class="top">
-      <span class="name">你的名字</span>
-      <span class="tagline">AI 工程 · 把想法做成能跑的作品</span>
+      <span class="name" data-profile="name"></span>
+      <span class="tagline" data-profile="tagline"></span>
     </header>
 
     <section class="works-head" id="vb-works">
@@ -285,17 +285,17 @@
     </section>
 
     <div class="preview" id="vb-preview">
-      <span class="preview-kicker"><span class="dot"></span>最新预告 · 即将上线</span>
-      <div class="preview-title">多 Agent 协作实战</div>
-      <div class="preview-desc">把 Agent 当成团队来管：规划、委托、验收，一次讲透。</div>
-      <span class="preview-date">预计 2026 年 10 月上线</span>
+      <span class="preview-kicker"><span class="dot"></span><span data-profile="preview.kicker"></span></span>
+      <div class="preview-title" data-profile="preview.title"></div>
+      <div class="preview-desc" data-profile="preview.desc"></div>
+      <span class="preview-date" data-profile="preview.date"></span>
     </div>
 
     <div class="masonry works" data-mode="b"></div>
 
     <section class="about" id="vb-about">
       <h2>关于我</h2>
-      <div>
+      <div data-profile-about>
         <p>我做 AI 工程方向的内容，专注把 Agent、Skill 与工作流这些“听起来玄乎”的东西，变成一套可以复用的方法论。</p>
         <p>下面这些作品，每一件都是一次完整的实践，而不是一个 demo 截图。</p>
       </div>
@@ -303,13 +303,13 @@
 
     <section class="contact" id="vb-contact">
       <div class="box">
-        <h2>想一起做点什么？</h2>
-        <p>欢迎来信交流想法与合作。</p>
-        <a class="btn" href="mailto:hello@example.com">发送邮件</a>
+        <h2 data-profile="contact.title"></h2>
+        <p data-profile="contact.desc"></p>
+        <a class="btn" href="mailto:hello@example.com" data-profile-email>发送邮件</a>
       </div>
     </section>
 
-    <footer class="footer">© 2026 你的名字</footer>
+    <footer class="footer" data-profile="footer"></footer>
   </div>
 </section>
 
@@ -317,7 +317,7 @@
 <section class="variant vc" id="variant-c">
   <div class="wrap">
     <nav class="nav">
-      <span class="brand">你的名字</span>
+      <span class="brand" data-profile="name"></span>
       <div class="links">
         <a href="#vc-works">作品</a>
         <a href="#vc-about">关于</a>
@@ -326,17 +326,17 @@
     </nav>
 
     <header class="hero">
-      <div class="avatar">你</div>
-      <h1>你的名字</h1>
-      <div class="pos">AI 工程创作者</div>
-      <p>把复杂的 Agent 与工作流拆开讲透，再把它们做成一个个真正能运行的作品。</p>
+      <div class="avatar" data-profile="nameInitial"></div>
+      <h1 data-profile="name"></h1>
+      <div class="pos" data-profile="position"></div>
+      <p data-profile="heroDesc"></p>
       <div class="cta">
         <a class="btn solid" href="#vc-works">浏览作品</a>
         <a class="btn ghost" href="#vc-contact">联系我</a>
       </div>
     </header>
 
-    <div class="stats">
+    <div class="stats" data-profile-stats>
       <div class="s"><div class="big">2</div><div class="lbl">作品</div></div>
       <div class="s"><div class="big">22</div><div class="lbl">总课时</div></div>
       <div class="s"><div class="big">8</div><div class="lbl">阶段</div></div>
@@ -344,29 +344,31 @@
 
     <section class="about" id="vc-about">
       <h2>关于我</h2>
-      <p>我相信“做出来才算数”。这里的每一件作品都对应一条可以跟着走的完整路径——从需求拆解、原型设计，到实现、调试与交付。</p>
-      <p>如果你也正在把 AI 能力落进真实项目里，希望这些内容能给你一点可复用的抓手。</p>
+      <div data-profile-about>
+        <p>我相信“做出来才算数”。这里的每一件作品都对应一条可以跟着走的完整路径——从需求拆解、原型设计，到实现、调试与交付。</p>
+        <p>如果你也正在把 AI 能力落进真实项目里，希望这些内容能给你一点可复用的抓手。</p>
+      </div>
     </section>
 
     <section id="vc-works">
       <div class="works-head"><h2>作品</h2></div>
       <div class="preview" id="vc-preview">
         <div class="preview-body">
-          <span class="preview-kicker"><span class="dot"></span>最新预告</span>
-          <div class="preview-title">多 Agent 协作实战 · 即将上线</div>
+          <span class="preview-kicker"><span class="dot"></span><span data-profile="preview.kicker"></span></span>
+          <div class="preview-title" data-profile="preview.title"></div>
         </div>
-        <span class="preview-date">2026 年 10 月</span>
+        <span class="preview-date" data-profile="preview.date"></span>
       </div>
       <div class="works" data-mode="c"></div>
     </section>
 
     <section class="contact" id="vc-contact">
-      <h2>想聊聊？</h2>
-      <p>欢迎来信交流，或约一杯咖啡。</p>
-      <a class="btn solid" href="mailto:hello@example.com">hello@example.com</a>
+      <h2 data-profile="contact.title"></h2>
+      <p data-profile="contact.desc"></p>
+      <a class="btn solid" href="mailto:hello@example.com" data-profile-email data-profile="email"></a>
     </section>
 
-    <footer class="footer">© 2026 你的名字 · 个人主页</footer>
+    <footer class="footer" data-profile="footer"></footer>
   </div>
 </section>
 
@@ -388,6 +390,7 @@
 </div>
 
 <script src="courses.js"></script>
+<script src="profile.js"></script>
 <script>
   const VARIANTS = [
     { key: 'A', name: '编辑杂志', el: document.getElementById('variant-a') },
@@ -461,6 +464,35 @@
 
   const renderers = { a: renderA, b: renderB, c: renderC };
   document.querySelectorAll('.works').forEach(el => renderers[el.dataset.mode](el));
+
+  // ---- apply profile content (from profile.js) ----
+  function getProfileVal(key) {
+    return key.split('.').reduce((o, k) => (o == null ? o : o[k]), PROFILE);
+  }
+  // 纯文本字段：data-profile="key" 或 data-profile="preview.title"
+  document.querySelectorAll('[data-profile]').forEach(el => {
+    const val = getProfileVal(el.dataset.profile);
+    if (val != null) el.textContent = val;
+  });
+  // 邮箱链接：设置 href，不覆盖已有文本
+  document.querySelectorAll('[data-profile-email]').forEach(el => {
+    el.href = 'mailto:' + PROFILE.email;
+  });
+  // 关于我段落：用 PROFILE.about 数组渲染
+  document.querySelectorAll('[data-profile-about]').forEach(container => {
+    container.innerHTML = PROFILE.about.map(p => `<p>${p}</p>`).join('');
+  });
+  // 方案 C 统计数据：根据 COURSES 自动计算
+  document.querySelectorAll('[data-profile-stats]').forEach(container => {
+    const works = COURSES.length;
+    const lessons = COURSES.reduce((s, c) => s + totalLessons(c), 0);
+    const stages = COURSES.reduce((s, c) => s + totalStages(c), 0);
+    container.innerHTML = [
+      { big: works, lbl: '作品' },
+      { big: lessons, lbl: '总课时' },
+      { big: stages, lbl: '阶段' }
+    ].map(s => `<div class="s"><div class="big">${s.big}</div><div class="lbl">${s.lbl}</div></div>`).join('');
+  });
 
   // ---- modal ----
   const overlay = document.getElementById('modalOverlay');

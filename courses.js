@@ -3,7 +3,7 @@ const COURSES = [
   {
     title: "AI Agent 2.0 基础",
     tag: "已完结 · 4 阶段",
-    desc: "从零做出真能干活的 Agent 并部署上线。覆盖工具、记忆、流式、评测、生产化、RAG、多 Agent 全链路。",
+    desc: "很基础，但有必要看下",
     stats: [{ big: "14", lbl: "节课" }, { big: "4", lbl: "阶段" }, { big: "~210min", lbl: "总时长" }],
     gradient: "#1e3a8a, #0ea5e9",
     path: "ai-agent-2.0",
@@ -36,7 +36,7 @@ const COURSES = [
   {
     title: "别让 AI 瞎写代码｜工程化 Agent+skills 开发全流程",
     tag: "已完结 · 4 阶段",
-    desc: "以 LinguaAI 为案例，走完 setup → grill-me → to-spec → to-tickets → implement 整条 Skill 流水线，从需求到交付一条龙，把 AI 开发做成工程。",
+    desc: "一款写给自己学习英语的工具，走完 setup → grill-me → to-spec → to-tickets → implement 整条 Skill 流水线，从需求到交付一条龙，把 AI 开发做成工程。",
     stats: [{ big: "8", lbl: "节课" }, { big: "4", lbl: "阶段" }, { big: "~120min", lbl: "总时长" }],
     gradient: "#134e4a, #14b8a6",
     path: "linguaai-course",
