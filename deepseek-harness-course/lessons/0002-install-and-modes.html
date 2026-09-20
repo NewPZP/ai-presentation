@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 2 课 · 安装 DSH 与四种运行模式</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 2 课 · DeepSeek Harness 实战</p>
+  <h1 class="lesson-title">安装 DSH 与四种运行模式</h1>
+  <p class="lesson-meta">跑起来、选对模式、管好权限 · 约 12 分钟</p>
+</header>
+
+<main>
+
+<h2>先检查你的 Node 版本</h2>
+
+<p>
+  DSH 对 Node 版本有硬性要求：<strong>^22.19.0 或 >=24.0.0</strong>。低于这个版本会在启动时报错。
+</p>
+
+<pre><code><span class="c"># 检查版本</span>
+node -v</code></pre>
+
+<p>
+  你当前的版本是 <code>v22.18.0</code>，<strong>差一点点</strong>。需要升级。如果你用 nvm：
+</p>
+
+<pre><code><span class="c"># 安装 22.19+ 或 24+</span>
+nvm install 22.19.0
+nvm use 22.19.0
+
+<span class="c"># 验证</span>
+node -v   <span class="c"># 应该显示 v22.19.0 或更高</span></code></pre>
+
+<div class="callout">
+  <p>
+    <strong>为什么版本卡这么死？</strong> DSH 大量使用了 Node 22.19 才稳定的原生特性（比如更新的 fetch、stream 处理）。用低版本跑会出现莫名其妙的 <code>node-domexception</code> 或模块加载失败。
+  </p>
+</div>
+
+<h2>一键启动 Web UI</h2>
+
+<p>
+  最简单的启动方式——不需要全局安装，用 npx 临时拉取：
+</p>
+
+<pre><code><span class="c"># 体验最新稳定版（npm latest 通道，当前 0.1.1-rc.2）</span>
+npx @deepseek-ai/dsh web
+
+<span class="c"># 体验预览版（npm next 通道，当前 0.1.2-rc.1，推荐）</span>
+npx @deepseek-ai/dsh@0.1.2-rc.1 web</code></pre>
+
+<p>
+  第一次运行会下载依赖（约 40MB），稍等片刻。启动后终端会打印：
+</p>
+
+<pre><code><span class="c"># 输出类似这样</span>
+  ➜  Local:   http://127.0.0.1:3080/</code></pre>
+
+<p>
+  浏览器打开 <code>http://127.0.0.1:3080</code>，你会看到 DSH 的 Web 界面。
+</p>
+
+<h3>第一次打开要做两件事</h3>
+
+<ol>
+  <li><strong>配 API Key：</strong>进 Settings → Models，填入你的 DeepSeek API Key（或其他 OpenAI 兼容供应商的 Key）。Key 存在本地，不会回显明文。</li>
+  <li><strong>选工作区：</strong>选一个<strong>空的、可丢弃的目录</strong>作为 Agent 的工作目录。不要一上来就选你的家目录或真实项目。</li>
+</ol>
+
+<div class="callout">
+  <p>
+    <strong>安全提醒：</strong>API Key 等于钱包的钥匙。只在设置里填，<strong>永远不要</strong>贴进聊天框、不要出现在截图里。
+  </p>
+</div>
+
+<h2>四种运行模式</h2>
+
+<p>
+  DSH 启动后可以选择运行模式（Mode）。每种模式预设了不同的工具集和权限，适配不同场景。<strong>不要一上来就用全功能模式</strong>，先理解每种适合干什么。
+</p>
+
+<table>
+  <thead>
+    <tr><th>模式</th><th>包含什么</th><th>什么时候用</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>Standard</strong></td>
+      <td>文件编辑、shell、文件搜索、网页搜索、技能、规划、目标、子代理、工作流</td>
+      <td>在真实仓库上做完整的编码任务。<strong>默认推荐</strong></td>
+    </tr>
+    <tr>
+      <td><strong>Code / PTC</strong></td>
+      <td>Standard 的全部工具 + Code Mode SDK（模型用 TypeScript 编排多步工具调用）</td>
+      <td>需要模型把多步操作组合成一段程序执行时</td>
+    </tr>
+    <tr>
+      <td><strong>Minimal</strong></td>
+      <td>只有两个工具：持久化 bash + str_replace_editor</td>
+      <td>模型基准测试、极简环境下的能力评估</td>
+    </tr>
+    <tr>
+      <td><strong>Creator</strong></td>
+      <td>Standard 能力 + 运行时检查 + 内存中插件实验 + 预设编写引导</td>
+      <td>构建自定义 Agent 预设、测试 Cordis 插件</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>怎么选？</h3>
+
+<ul>
+  <li><strong>日常编码、改项目</strong> → Standard</li>
+  <li><strong>让模型自己写代码来串联多个工具</strong> → PTC</li>
+  <li><strong>评测模型在裸环境下的能力</strong> → Minimal</li>
+  <li><strong>你要开发插件或自定义预设</strong> → Creator</li>
+</ul>
+
+<h2>沙箱权限：三档安全策略</h2>
+
+<p>
+  除了运行模式，你还要设置<strong>沙箱模式（SandboxMode）</strong>，控制 Agent 对文件系统的写权限。这是 DSH 最重要的安全防线。
+</p>
+
+<table>
+  <thead>
+    <tr><th>沙箱模式</th><th>文件效果</th><th>建议</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>read-only</strong></td>
+      <td>默认安全档。<strong>写入全部拒绝</strong></td>
+      <td>第一次跑、不信任的任务、纯阅读场景</td>
+    </tr>
+    <tr>
+      <td><strong>workspace-write</strong></td>
+      <td>只能写工作区根目录和临时目录</td>
+      <td><strong>日常使用推荐</strong>，Agent 能干活但碰不到工作区外的文件</td>
+    </tr>
+    <tr>
+      <td><strong>danger-full-access</strong></td>
+      <td>绕过隔离，等于不设沙箱</td>
+      <td>除非你完全清楚在做什么，否则<strong>永远别用</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    DSH 的沙箱在不同操作系统用不同后端：Linux 用 bwrap / Landlock，macOS 用 Seatbelt，Windows 用 ACL。如果后端不可用，DSH 会直接抛 <code>SANDBOX_UNAVAILABLE</code> 而不是裸跑——这是设计上的安全保证。
+  </p>
+</blockquote>
+
+<h2>官方最佳实践：第一次运行的 5 条</h2>
+
+<p>来自 <a href="https://harnessdeepseek.org/guides.html#practices" target="_blank">官方 Guides</a>：</p>
+
+<ol>
+  <li>在<strong>空的、可丢弃的目录</strong>里开始，不要选家目录或客户的 monorepo。</li>
+  <li>保持 <code>workspace-write</code> + <code>ask</code>（每次操作询问），不要一上来就 <code>danger-full-access</code>。</li>
+  <li><strong>锁定版本</strong>。不带版本号的 <code>npx @deepseek-ai/dsh web</code> 跟随 latest（0.1.1-rc.2），要体验新功能就 pin <code>@0.1.2-rc.1</code>。</li>
+  <li>插件、MCP 服务器、技能、钩子执行前先审查。</li>
+  <li>凭证不要放在工作区里——文件沙箱限制的是<em>写入</em>，不是<em>读取</em>。</li>
+</ol>
+
+<h2>常见启动问题速查</h2>
+
+<table>
+  <thead>
+    <tr><th>报错</th><th>原因</th><th>解决</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>node-domexception</code> / 启动失败</td>
+      <td>Node 版本低于 22.19</td>
+      <td>升级 Node 到 22.19+ 或 24+</td>
+    </tr>
+    <tr>
+      <td><code>EACCES</code> on port 3080</td>
+      <td>端口被占用（Docker/WSL/Hyper-V）</td>
+      <td>停掉占用进程，或换端口</td>
+    </tr>
+    <tr>
+      <td><code>ERR_MODULE_NOT_FOUND</code></td>
+      <td>用 pnpm 装了发布版包</td>
+      <td>用 npx 或 npm 装发布版；pnpm 只在源码构建时用</td>
+    </tr>
+    <tr>
+      <td>页面加载但 API 返回 403</td>
+      <td>访问的不是 127.0.0.1（不在信任 Host 列表）</td>
+      <td>用 <code>http://127.0.0.1:3080</code>，不要用 localhost 或 IP</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>动动手</h2>
+
+<div class="callout">
+  <p>
+    <strong>本课实操任务：</strong>
+  </p>
+  <ol>
+    <li>升级 Node 到 22.19+</li>
+    <li>运行 <code>npx @deepseek-ai/dsh@0.1.2-rc.1 web</code></li>
+    <li>打开 <code>http://127.0.0.1:3080</code>，填入 API Key</li>
+    <li>选一个空目录作为工作区，用 Standard 模式 + workspace-write 权限</li>
+    <li>让 Agent 做一件小事：在工作区里创建一个 <code>hello.md</code>，写入「Hello from DSH」</li>
+  </ol>
+  <p>完成后告诉我结果，或者如果卡住了，把报错贴给我。</p>
+</div>
+
+<h2>本节课的小测验</h2>
+
+<div class="quiz" data-quiz="1">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">DSH 要求的最低 Node.js 版本是？</p>
+  <ul class="quiz-options">
+    <li data-correct="false">18.0.0</li>
+    <li data-correct="false">20.0.0</li>
+    <li data-correct="true">22.19.0</li>
+    <li data-correct="false">24.0.0</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <p class="quiz-question">日常编码任务，推荐的运行模式和沙箱组合是？</p>
+  <ul class="quiz-options">
+    <li data-correct="false">Minimal + danger-full-access</li>
+    <li data-correct="true">Standard + workspace-write</li>
+    <li data-correct="false">Creator + read-only</li>
+    <li data-correct="false">PTC + danger-full-access</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://harnessdeepseek.org/features.html" target="_blank">官方 Features 页</a> — 四种模式、沙箱策略的权威说明</p>
+    <p><a href="https://harnessdeepseek.org/guides.html" target="_blank">官方 Guides 页</a> — 启动问题排查、最佳实践</p>
+  </section>
+  <section>
+    <h4>上一课</h4>
+    <p><a href="0001-what-is-deepseek-harness.html">← 第 1 课 · DeepSeek Harness 是什么？</a></p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p>第 3 课 · 必备插件生态（dsh-market / modlens / dsh-at-file）</p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>安装遇到任何报错都可以贴给我，我帮你排查。</p>
+  </section>
+</footer>
+
+<script>
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const isCorrect = opt.dataset.correct === 'true';
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (isCorrect) {
+          opt.classList.add('correct');
+          feedback.textContent = '正确。Node 需要 22.19+；日常编码用 Standard 模式配 workspace-write 沙箱。';
+        } else {
+          opt.classList.add('wrong');
+          const correct = quiz.querySelector('[data-correct="true"]');
+          if (correct) correct.classList.add('correct');
+          feedback.textContent = '不对。Node 最低 22.19.0；日常编码推荐 Standard + workspace-write。';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

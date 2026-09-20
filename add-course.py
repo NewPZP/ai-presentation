@@ -52,11 +52,25 @@ def load_courses():
 
 def save_courses(courses):
     """把 courses list 写回 courses.js。"""
-    lines = ["// 课程数据 - 由 add-course.py 维护，请勿手动编辑", "const COURSES = ["]
+    lines = [
+        "// courses.js —— 个人主页「作品墙」数据（由 add-course.py 生成/维护，可手动补充 github/video/date/highlights）",
+        "// index.html 会把这里的每一门课程渲染成作品墙里的一张卡片。",
+        "// 字段说明：",
+        "//   title/gradient  —— 卡片标题、封面渐变色",
+        "//   status/desc    —— 卡片状态标签、简介",
+        "//   stats/stages   —— 卡片弹窗里的统计与课节目录",
+        "//   path           —— 课程目录名（教程入口据此打开 lessons/*.html）",
+        "//   github         —— 可选：GitHub 仓库链接；留空/删除则卡片不显示 GitHub 角标",
+        "//   video          —— 可选：视频链接；留空/删除则卡片不显示视频角标",
+        "//   date           —— 可选：预告项目的预计上线时间",
+        "//   highlights     —— 可选：作者亮点标签（多个，抓眼球）",
+        "// 数组内部不要写 // 行内注释（本脚本按 JSON 解析数组）。",
+        "const COURSES = [",
+    ]
     for i, course in enumerate(courses):
         lines.append("  {")
         lines.append(f'    title: {json.dumps(course["title"], ensure_ascii=False)},')
-        lines.append(f'    tag: {json.dumps(course["tag"], ensure_ascii=False)},')
+        lines.append(f'    status: {json.dumps(course["status"], ensure_ascii=False)},')
         lines.append(f'    desc: {json.dumps(course["desc"], ensure_ascii=False)},')
         stats_str = ", ".join(
             f'{{ big: {json.dumps(s["big"], ensure_ascii=False)}, lbl: {json.dumps(s["lbl"], ensure_ascii=False)} }}'
@@ -65,6 +79,10 @@ def save_courses(courses):
         lines.append(f"    stats: [{stats_str}],")
         lines.append(f'    gradient: {json.dumps(course["gradient"], ensure_ascii=False)},')
         lines.append(f'    path: {json.dumps(course["path"], ensure_ascii=False)},')
+        # 可选关联入口（在 courses.js 手动配置，同步时原样保留，不丢失）
+        for key in ("github", "video", "date", "highlights"):
+            if course.get(key):
+                lines.append(f'    {key}: {json.dumps(course[key], ensure_ascii=False)},')
         lines.append("    stages: [")
         for j, stage in enumerate(course["stages"]):
             lines.append(f'      {{ name: {json.dumps(stage["name"], ensure_ascii=False)}, lessons: [')
@@ -284,7 +302,7 @@ def _sync_new(courses, path, course_dir, scanned_lessons):
         print("标题不能为空，已取消。")
         return
 
-    tag = input(f"状态标签 [筹备中 · 1阶段]: ").strip() or "筹备中 · 1阶段"
+    status = input(f"状态标签 [筹备中 · 1阶段]: ").strip() or "筹备中 · 1阶段"
     desc = input("课程描述（一句话）: ").strip()
     if not desc:
         desc = title
@@ -335,7 +353,7 @@ def _sync_new(courses, path, course_dir, scanned_lessons):
 
     course = {
         "title": title,
-        "tag": tag,
+        "status": status,
         "desc": desc,
         "stats": stats,
         "gradient": gradient,
@@ -347,7 +365,7 @@ def _sync_new(courses, path, course_dir, scanned_lessons):
     print(f"\n{'─'*50}")
     print(f"课程预览:")
     print(f"  标题: {title}")
-    print(f"  标签: {tag}")
+    print(f"  标签: {status}")
     print(f"  描述: {desc}")
     print(f"  渐变: {gradient}")
     print(f"  目录: {path}")
@@ -404,7 +422,7 @@ def add_course_interactive():
     if not title:
         print("标题不能为空，已取消。")
         return
-    tag = prompt("状态标签", "筹备中 · 1阶段")
+    status = prompt("状态标签", "筹备中 · 1阶段")
     desc = prompt("课程描述（一句话）")
     if not desc:
         desc = title
@@ -454,14 +472,14 @@ def add_course_interactive():
 
     stats = calc_stats(stages)
     course = {
-        "title": title, "tag": tag, "desc": desc,
+        "title": title, "status": status, "desc": desc,
         "stats": stats, "gradient": gradient, "path": path, "stages": stages,
     }
 
     print(f"\n{'─'*50}")
     print("课程预览:")
     print(f"  标题: {title}")
-    print(f"  标签: {tag}")
+    print(f"  标签: {status}")
     print(f"  描述: {desc}")
     print(f"  渐变: {gradient}")
     print(f"  目录: {path}")
@@ -490,7 +508,7 @@ def list_courses():
     for i, c in enumerate(courses):
         total = sum(len(s["lessons"]) for s in c["stages"])
         print(f"  [{i}] {c['title']}")
-        print(f"      {c['tag']} · {total} 课 · {c['path']}/")
+        print(f"      {c['status']} · {total} 课 · {c['path']}/")
         for s in c["stages"]:
             print(f"        {s['name']} ({len(s['lessons'])} 课)")
         print()

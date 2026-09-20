@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 1 课 · DeepSeek Harness 是什么？</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 1 课 · DeepSeek Harness 实战</p>
+  <h1 class="lesson-title">DeepSeek Harness 是什么？</h1>
+  <p class="lesson-meta">从「手写 Agent」到「一切皆插件」 · 约 10 分钟</p>
+</header>
+
+<main>
+
+<h2>先回忆你已经会的</h2>
+
+<p>
+  在 <a href="../../ai-agent-2.0/lessons/0001-what-is-an-ai-agent.html">AI Agent 2.0 课程</a>里，你手写过这样的 Agent 循环：
+</p>
+
+<pre><code><span class="c"># 你手写的 Agent 核心循环（伪代码）</span>
+<span class="k">while</span> <span class="k">True</span>:
+    response = llm.chat(messages, tools)        <span class="c"># 调模型</span>
+    <span class="k">if</span> response.tool_calls:
+        result = execute_tool(response.tool_calls)  <span class="c"># 执行工具</span>
+        messages.append(result)                      <span class="c"># 结果回灌</span>
+    <span class="k">else</span>:
+        <span class="k">break</span>                                   <span class="c"># 模型说停就停</span></code></pre>
+
+<p>
+  这个循环就是 <strong>Agent 的心脏</strong>。你亲手把它写出来、跑通、加上记忆、封装成 Web 服务。这说明你已经理解了 Agent 的本质：<strong>LLM + 工具 + 循环</strong>。
+</p>
+
+<p>
+  问题是：当你想让这个 Agent「真的干活」时，光有这个循环够吗？
+</p>
+
+<h2>手写 Agent 会撞到的墙</h2>
+
+<p>
+  假设你要让 Agent 帮你重构一个真实项目。你需要它：
+</p>
+
+<ul>
+  <li>读文件、改文件、跑命令、搜索代码</li>
+  <li>记住跨会话的项目上下文</li>
+  <li>限制它不能删你家目录、不能读你的 SSH key</li>
+  <li>出错时能回放、能定位是哪一步烧的钱</li>
+  <li>换个模型供应商不用重写一半代码</li>
+</ul>
+
+<p>
+  这些事<strong>每一件都不复杂</strong>，但堆在一起就是几千行工程代码。Claude Code、Codex、OpenCode 这些产品，本质上都是在「手写循环」外面包了一层厚厚的壳——工具集、沙箱、记忆、可追溯、权限管理。
+</p>
+
+<blockquote>
+  <p>
+    LLM 是灵魂，但灵魂不能直接在你的电脑上动手。它需要一具<strong>身体</strong>——这具身体就叫 <strong>Harness</strong>。
+  </p>
+</blockquote>
+
+<h2>一句话记住 Harness</h2>
+
+<p style="font-size:1.15rem; text-align:center; margin:2rem 0; font-weight:600;">
+  Agent = Model + Harness
+</p>
+
+<p>
+  「Harness」本意是马具——把马的力量接到犁和车上、又不让马脱缰的那套装置。模型是马，Harness 是马具：它负责把模型接到文件系统、终端、网页上，记录它做了什么、限制它能做什么，出错时决定是重试还是把问题扔回给人。
+</p>
+
+<p>
+  所以 Claude Code 是 Harness，Codex 是 Harness，OpenCode 也是 Harness。它们都是「模型 + 一层让模型能动手的壳」。
+</p>
+
+<h2>DeepSeek Harness 不一样在哪？</h2>
+
+<p>
+  大多数 Harness（Claude Code、Codex）是<strong>精装房</strong>：内核一体化封装，体验打磨得很细，但封闭，社区没有插手的空间。你想加个自定义工具？只能等官方。
+</p>
+
+<p>
+  DeepSeek Harness（简称 DSH）走的是反方向——<strong>毛坯房</strong>，五个字的设计主张：
+</p>
+
+<p style="font-size:1.15rem; text-align:center; margin:2rem 0; font-weight:600; color:var(--accent);">
+  一切皆插件
+</p>
+
+<p>
+  在 DSH 里，没有「特权核心」。<strong>模型适配器是插件，工具注册表是插件，会话日志是插件，连 Agent 主循环本身都是插件</strong>。每一层都可以替换、扩展、热重载，而不用改 DSH 的源码。
+</p>
+
+<table>
+  <thead>
+    <tr><th>能力</th><th>在 DSH 里是什么</th><th>你可以做什么</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>模型</strong></td>
+      <td>模型适配器插件</td>
+      <td>换 DeepSeek / GLM / Qwen / OpenAI 兼容，改配置就行</td>
+    </tr>
+    <tr>
+      <td><strong>工具</strong></td>
+      <td>工具注册插件</td>
+      <td>自己写工具，或装社区插件</td>
+    </tr>
+    <tr>
+      <td><strong>记忆 / 会话</strong></td>
+      <td>会话日志插件</td>
+      <td>append-only 日志，可回放、分叉、搜索</td>
+    </tr>
+    <tr>
+      <td><strong>安全</strong></td>
+      <td>沙箱插件</td>
+      <td>read-only / workspace-write / danger-full-access 三档</td>
+    </tr>
+    <tr>
+      <td><strong>循环</strong></td>
+      <td>Agent loop 插件</td>
+      <td>甚至可以替换主循环本身</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  底层驱动这一切的是 <strong>Cordis</strong>——一个极小的 TypeScript 微内核。Cordis 管插件的安装、卸载、依赖、热重载，DSH 把所有能力都建成 Cordis 插件。
+</p>
+
+<h2>为什么这对你重要？</h2>
+
+<p>
+  你想做自己的 AI Agent。如果用 Claude Code，你被锁在 Anthropic 的工具集和体验里；如果用 LangChain，你要在抽象层里反复猜「这个回调到底什么时候触发」。
+</p>
+
+<p>
+  DSH 的思路是：<strong>你只写你需要的那一块</strong>，剩下的用官方或社区插件拼。想换模型？换适配器。想加个图片 OCR 能力？装 modlens。想做跨会话记忆？装 OpenViking。<strong>拼装，而不是重造</strong>。
+</p>
+
+<blockquote>
+  <p>
+    DSH 是 2026 年 8 月 13 日开源的，MIT 协议，两天冲了 9.5 万 Star。它是目前唯一一个把「连主循环都插件化」做到生产可用的开源 Agent 运行时。
+  </p>
+</blockquote>
+
+<h2>这门课的路线图</h2>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>你会拿到什么</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1（本课）</td><td>心智模型：Agent = Model + Harness，一切皆插件</td></tr>
+    <tr><td>2</td><td>安装 DSH，跑通 Web UI，理解四种运行模式</td></tr>
+    <tr><td>3</td><td>必备插件：dsh-market、modlens、dsh-at-file、界面增强</td></tr>
+    <tr><td>4</td><td>沙箱、权限与 Trajectory 可追溯</td></tr>
+    <tr><td>5</td><td>写你的第一个 Tool 插件</td></tr>
+    <tr><td>6</td><td>模型切换、成本控制与最佳实践</td></tr>
+  </tbody>
+</table>
+
+<h2>本节课的小测验</h2>
+
+<div class="quiz" data-quiz="1">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">在 DeepSeek Harness 的设计中，以下哪一项<strong>不是</strong>可替换的插件？</p>
+  <ul class="quiz-options">
+    <li data-correct="false">模型适配器</li>
+    <li data-correct="false">Agent 主循环</li>
+    <li data-correct="true">Cordis 微内核本身</li>
+    <li data-correct="false">会话日志</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <p class="quiz-question">「Agent = Model + Harness」这个公式里，Harness 负责的是？</p>
+  <ul class="quiz-options">
+    <li data-correct="false">预测下一个 token</li>
+    <li data-correct="true">让模型能调用工具、管理上下文、限制权限</li>
+    <li data-correct="false">训练模型参数</li>
+    <li data-correct="false">提供 GPU 算力</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>下一节课预告：</strong>我们会亲手把 DSH 跑起来，理解 Standard / PTC / Minimal / Creator 四种模式分别适合什么场景，以及沙箱权限该怎么开。
+  </p>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://harnessdeepseek.org/" target="_blank">DeepSeek Harness 官方网站</a> — 功能清单、运行模式、沙箱策略</p>
+    <p><a href="https://www.freecodecamp.org/news/what-is-an-agent-harness/" target="_blank">freeCodeCamp: What Is an Agent Harness?</a> — Harness 五层模型与十大框架对比</p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p><a href="0002-install-and-modes.html">第 2 课 · 安装 DSH 与四种运行模式 →</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>随时问我任何不清楚的地方——我是你的老师，可以帮你拆解概念、排查报错、调整学习节奏。</p>
+  </section>
+</footer>
+
+<script>
+  // 简易测验逻辑
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const isCorrect = opt.dataset.correct === 'true';
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (isCorrect) {
+          opt.classList.add('correct');
+          feedback.textContent = '答对了。Cordis 是内核，它承载所有插件但自身不被替换；其他三项都是插件。';
+        } else {
+          opt.classList.add('wrong');
+          const correct = quiz.querySelector('[data-correct="true"]');
+          if (correct) correct.classList.add('correct');
+          feedback.textContent = '再想想。模型适配器、主循环、会话日志在 DSH 里全是可替换的插件。';
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

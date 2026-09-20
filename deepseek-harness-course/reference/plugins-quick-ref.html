@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · DeepSeek Harness 必备插件速查表</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">必备插件速查表</h1>
+  <p class="lesson-meta">社区实测前 10 名 · 安装命令 + 适用人群 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  数据截至 2026-09，DSH 生态变化很快，安装前请在 <code>dsh-market</code> 里搜最新版本。
+</p>
+
+<h2>三步走起步策略</h2>
+
+<blockquote>
+  <p>不要一口气装十个。先装「市场 + 视觉」，再装一个界面插件，最后按需补搜索和记忆。</p>
+</blockquote>
+
+<table>
+  <thead>
+    <tr><th>阶段</th><th>插件</th><th>目的</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>第一步</td><td>dsh-market + modlens</td><td>生态入口 + 视觉能力</td></tr>
+    <tr><td>第二步</td><td>dsh-web-ui 或 DSH-better-sidebar（二选一）</td><td>界面升级</td></tr>
+    <tr><td>第三步</td><td>按需：搜索 / 记忆 / 费用 / 知识库</td><td>补齐高频痛点</td></tr>
+  </tbody>
+</table>
+
+<h2>插件清单</h2>
+
+<table>
+  <thead>
+    <tr><th>#</th><th>插件</th><th>作用</th><th>安装命令</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><strong>dsh-market</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">生态入口</span></td>
+      <td>插件市场。装了它可以在设置里一键搜索、安装社区插件和主题，还能备份还原配置。</td>
+      <td><code>dsh plugin --profile web add dshmarket</code></td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><strong>modlens</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">视觉扩展</span></td>
+      <td>给纯文本模型装上眼睛。粘贴图片自动 OCR + 版面分析。表格、论文、报错截图秒转文字。</td>
+      <td><code>npx -y @deepseek-ai/dsh plugin --profile web add @liustack/modlens@3.25.2</code></td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><strong>dsh-web-ui</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">界面全家桶 ⭐6.4k</span></td>
+      <td>任务看板、Git 图谱、Token 实时统计、桌面宠物。把极简聊天框升级成全功能控制台。</td>
+      <td><code>dsh plugin --profile web add @linxin666/dsh-web-all@latest</code></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><strong>DSH-better-sidebar</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">侧边工作台 ⭐3.1k</span></td>
+      <td>VS Code 风格侧边栏，内置文件树、真实终端、子代理状态监控。和 #3 二选一或同装。</td>
+      <td><code>dsh plugin --profile web add dsh-better-sidebar@latest</code><br><span style="color:var(--ink-faint);font-size:0.75rem;">若失败：<code>cd ~/.dsh/profiles/web && pnpm approve-builds --all</code> 后重试</span></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><strong>dsh-at-file</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">快速引用</span></td>
+      <td>输入框打 <code>@</code> 模糊搜索本地文件，回车引用进上下文。不用再复制粘贴。</td>
+      <td><code>dsh plugin --profile web add https://github.com/omdsh-dev/dsh-at-file/archive/refs/tags/v0.6.8.tar.gz</code></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td><strong>deepseek-harness-desktop</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">桌面客户端</span></td>
+      <td>官方 Web UI 的桌面封装。免配置 Node.js，系统托盘常驻，点开就用。</td>
+      <td>从仓库下载安装包</td>
+    </tr>
+    <tr>
+      <td>7</td>
+      <td><strong>dsh-web-search-pro</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">多源搜索</span></td>
+      <td>聚合 DeepSeek、Bing、Exa 多引擎，支持小红书/知乎/B 站定向爬取，结果本地缓存。</td>
+      <td>dsh-market 搜索安装</td>
+    </tr>
+    <tr>
+      <td>8</td>
+      <td><strong>OpenViking</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">跨会话记忆</span></td>
+      <td>自进化上下文数据库，把碎片对话变成长期记忆和知识 RAG。上周聊的项目背景这周还记得。</td>
+      <td>dsh-market 搜索 <code>dsh-openviking</code></td>
+    </tr>
+    <tr>
+      <td>9</td>
+      <td><strong>dsh-cost-meter</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">费用看板</span></td>
+      <td>实时统计会话花费和当日预算，峰谷电价切换前自动提醒。涨价后必备。</td>
+      <td>dsh-market 搜索安装</td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td><strong>dsh-session-library</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">知识库精读</span></td>
+      <td>本地文档混合检索 + 长文精读。把 PDF 自动拆成主张和证据链，读论文神器。</td>
+      <td>dsh-market 搜索 <code>session library</code> 或 <code>dsh-okf</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>插件安装通用命令</h2>
+
+<pre><code><span class="c"># 基本格式</span>
+dsh plugin --profile web add &lt;包名或 URL&gt;
+
+<span class="c"># 常用变体</span>
+dsh plugin --profile web add dshmarket                          <span class="c"># npm 包名</span>
+dsh plugin --profile web add @scope/package@version            <span class="c"># 指定版本</span>
+dsh plugin --profile web add https://github.com/.../v0.6.8.tar.gz  <span class="c"># GitHub tarball</span>
+
+<span class="c"># 装完后重启生效</span>
+dsh web</code></pre>
+
+<h2>仓库地址索引</h2>
+
+<table>
+  <thead>
+    <tr><th>插件</th><th>仓库</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>dsh-market</td><td><code>github.com/dsh-market/dsh-market</code></td></tr>
+    <tr><td>modlens</td><td><code>github.com/liustack/modlens</code></td></tr>
+    <tr><td>dsh-web-ui</td><td><code>github.com/zhu1090093659/dsh-web</code></td></tr>
+    <tr><td>DSH-better-sidebar</td><td><code>github.com/omdsh-dev/DSH-better-sidebar</code></td></tr>
+    <tr><td>dsh-at-file</td><td><code>github.com/FSMargoo/dsh-at-file</code></td></tr>
+    <tr><td>OpenViking 引擎</td><td><code>github.com/volcengine/OpenViking</code></td></tr>
+    <tr><td>dsh-cost-meter</td><td><code>github.com/Han-1413141/dsh-cost-meter</code></td></tr>
+  </tbody>
+</table>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://cloud.tencent.com/developer/article/2734408" target="_blank">腾讯云：DeepSeek Harness 必备插件清单</a></p>
+    <p><a href="https://github.com/topics/dsh-plugin" target="_blank">GitHub dsh-plugin topic</a> — 发现新插件</p>
+  </section>
+</footer>
+
+</body>
+</html>
