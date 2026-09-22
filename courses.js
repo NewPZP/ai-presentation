@@ -33,6 +33,17 @@ const COURSES = [
     path: "",
     date: "预计 2026 年 10 月上线",
     stages: []
+  },
+  {
+    title: "deepseek harness",
+    status: "预告 · 即将上线",
+    desc: "快速上手，我编程agent的版本答案，透明，可定制，实惠，",
+    highlights: ["版本答案"],
+    stats: [],
+    gradient: "#92400e, #f59e0b",
+    path: "",
+    date: "预计 2026 年 9 月底上线",
+    stages: []
   }
 ,
   {
@@ -78,6 +89,7 @@ const COURSES = [
     gradient: "#134e4a, #14b8a6",
     path: "linguaai-course",
     github: "https://github.com/NewPZP/learn_english_with_ai",
+    video: "https://www.bilibili.com/video/BV1cihk6qEYu/",
     stages: [
       { name: "阶段一 · 起步", lessons: [
         { n: "01", t: "全景：Agent + Skill 开发范式", f: "0001-overview-and-roadmap.html" },
