@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 6 课 · 模型、成本与毕业</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 6 课 · DeepSeek Harness 实战（完结）</p>
+  <h1 class="lesson-title">模型、成本与毕业</h1>
+  <p class="lesson-meta">换模型、看懂账本、把它用下去 · 约 20 分钟</p>
+</header>
+
+<main>
+
+<h2>最后一课，解决「跑得久、跑得起」</h2>
+
+<p>
+  前五课你已经能：跑起 DSH、装插件、看懂沙箱与轨迹、写出自己的工具。但这些都还只是「它能干活」。真正决定它能不能<strong>长期为你所用</strong>的，是两件很现实的事：
+</p>
+
+<ul>
+  <li><strong>模型能不能换</strong>——换供应商、换档位，别被一家锁死</li>
+  <li><strong>钱花在哪、怎么少花</strong>——Agent 是会持续烧钱的</li>
+</ul>
+
+<p>这一课讲完这两件，再把六课串成一套能天天用的工作流，然后送你出门。</p>
+
+<h2>换模型：在 DSH 里为什么很便宜</h2>
+
+<p>
+  回到第 1 课那句话：<strong>模型适配器也是插件</strong>。所以「换模型」在 DSH 里有三个层次，成本递增：
+</p>
+
+<table>
+  <thead>
+    <tr><th>层次</th><th>怎么做</th><th>适合</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>换配置</strong></td>
+      <td>Settings → Models 里改供应商和模型</td>
+      <td>已经支持的供应商，<strong>99% 的情况</strong></td>
+    </tr>
+    <tr>
+      <td><strong>换 provider</strong></td>
+      <td>在 <code>cordis.yml</code> 里改 <code>provider</code> / <code>model</code></td>
+      <td>按任务分派不同模型</td>
+    </tr>
+    <tr>
+      <td><strong>写适配器</strong></td>
+      <td>继承 <code>LlmAdapter</code>、实现 <code>stream()</code></td>
+      <td>供应商还没有适配器</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  第三层才是「写代码」，而且模板很小——核心就是把 Harness 的请求转成供应商 API、再把响应转回分片：
+</p>
+
+<pre><code><span class="k">import</span> { LlmAdapter, <span class="k">type</span> GenerateOptions, <span class="k">type</span> StreamChunk } <span class="k">from</span> <span class="s">'@deepseek-ai/dsh-llm'</span>
+
+<span class="k">class</span> MyAdapter <span class="k">extends</span> LlmAdapter {
+  <span class="k">async</span> *stream(options: GenerateOptions): AsyncIterable&lt;StreamChunk&gt; {
+    <span class="c">// 1. 把 options.messages 转成供应商格式</span>
+    <span class="c">// 2. 调流式 API</span>
+    <span class="c">// 3. 把响应转成 StreamChunk 分片</span>
+  }
+}
+
+<span class="k">export const</span> name = <span class="s">'my-llm-adapter'</span>
+<span class="k">export const</span> inject = [<span class="s">'llm'</span>]
+
+<span class="k">export function</span> apply(ctx: Context, config: Config) {
+  ctx.llm.registerAdapter(config.providers, <span class="k">new</span> MyAdapter(config.apiKey))
+}</code></pre>
+
+<p>然后在 <code>cordis.yml</code> 里把 provider 和 model 接上：</p>
+
+<pre><code>- id: my-llm
+  name: <span class="s">'./src/my-llm-adapter.ts'</span>
+  config:
+    apiKey: !!js process.env.MY_API_KEY      <span class="c"># 从环境变量读，别写死</span>
+    providers: [my-provider]
+
+- id: agent-loop
+  name: <span class="s">'@deepseek-ai/dsh-agent-loop'</span>
+  config:
+    agents:
+      - id: main
+        provider: my-provider
+        model: my-model-v1</code></pre>
+
+<div class="callout">
+  <p>
+    <strong>别从零写。</strong> 官方仓库里有两个可直接对照的完整实现：<code>llm-deepseek</code>（<strong>OpenAI 兼容格式</strong>）和 <code>llm-pi-ai</code>（另一种格式）。绝大多数国产模型都走 OpenAI 兼容协议——照着 <code>llm-deepseek</code> 改 endpoint 和 model id 就能跑。<strong>注意</strong>：适配器遇到传输/协议故障要抛带稳定 code 的 <code>LlmError</code>，并透传 <code>options.signal</code>，别用普通 <code>Error</code>。
+  </p>
+</div>
+
+<h2>看懂成本：token 账本里的两个数字</h2>
+
+<p>
+  从 <code>0.1.2-rc.1</code> 起，每次回答结束后会直接显示 <strong>token 用量和耗时</strong>。但「用量」其实有两个口径，分清它们是你控制成本的前提：
+</p>
+
+<table>
+  <thead>
+    <tr><th>数字</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>totalTokens</code></td>
+      <td>这一次调用的<strong>请求 + 响应压力</strong></td>
+    </tr>
+    <tr>
+      <td><code>surfaceTokens</code></td>
+      <td>当前<strong>「表层」（上下文里所有节点）</strong>的路由定价总量，等于各节点价格之和</td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    <strong>最关键的一句话：每一次模型调用，都要把整个 surface 重新发一遍。</strong> 所以上下文越长，<strong>不是贵一次，而是之后每一步都更贵</strong>。上下文成本是<strong>累积</strong>的。
+  </p>
+</blockquote>
+
+<p>
+  这解释了一个常见困惑：为什么你只是多聊了几轮，账单却涨得比预期快。因为你每多留一段无关内容在上下文里，它都会在<strong>后续每一次调用中重复计费</strong>。
+</p>
+
+<p>
+  另一个要知道的细节：计量里的 <code>baseline</code> 分两种——<code>usage</code> 表示最近一次成功的供应商调用有相同的请求结构，用的是<strong>真实 usage</strong>（准）；<code>estimated</code> 表示没有可复用的锚点，服务自己按启发式<strong>估算</strong>（仅供方向参考）。
+</p>
+
+<h2>省钱的四个动作</h2>
+
+<ol>
+  <li>
+    <strong>控制 surface，而不是控制回复。</strong> 省钱的主战场是上下文：任务做完就<strong>开新会话</strong>，别在一个会话里堆一整天的活；长任务靠压缩上下文而不是硬扛。
+  </li>
+  <li>
+    <strong>按任务选模型。</strong> 粗活（改格式、写样板、批量重命名）用便宜快的模型；难活（架构设计、疑难调试）才上强模型。用 <code>cordis.yml</code> 里的 <code>provider</code>/<code>model</code> 分派。
+  </li>
+  <li>
+    <strong>利用峰谷定价。</strong> DeepSeek 有高峰/闲时两档费率（闲时半价）。把可延迟的批量任务挪到闲时跑——社区插件 <a href="https://github.com/future007s/dsh-peak-indicator" target="_blank">dsh-peak-indicator</a> 会在会话头部用徽标显示当前档期（⚡高峰 / 🌙闲时）和距下次切换的倒计时。
+  </li>
+  <li>
+    <strong>装个成本看板。</strong> 实时看会话花费和当日预算，比月底看账单才发现超支好得多（第 3 课速查表里的 <code>dsh-cost-meter</code>）。
+  </li>
+</ol>
+
+<p>
+  排查「钱到底烧在哪一步」，就回到<a href="0004-sandbox-and-trajectory.html">第 4 课</a>的 Trajectory：每一轮的 token 用量都在时间线上，归因到具体某次工具调用。
+</p>
+
+<h2>官方最佳实践：五条</h2>
+
+<p>来自<a href="https://harnessdeepseek.org/guides.html#practices" target="_blank">官方 Guides</a>，每条都值得贴在你工作区旁边：</p>
+
+<ol>
+  <li><strong>在空的可丢弃目录里开始</strong>，不要选家目录或客户的 monorepo。</li>
+  <li><strong>保持 <code>workspace-write</code> + <code>ask</code></strong>，不要一上来就 <code>danger-full-access</code>。</li>
+  <li><strong>锁定版本。</strong> 不带版本号的 <code>npx</code> 跟随 latest。</li>
+  <li><strong>审查插件、MCP 服务器、Skills、Hooks</strong>再让它们执行。</li>
+  <li><strong>凭证不要放进工作区</strong>——沙箱限制的是写，不是读（第 4 课的核心）。</li>
+</ol>
+
+<h2>一条架构最佳实践：能力的三层拆分</h2>
+
+<p>
+  这是 DSH 自己组织代码的方式，也是最值得你抄走的架构习惯。当一项能力需要支持<strong>可替换的提供方</strong>时，官方把它拆成三种角色：
+</p>
+
+<pre><code>┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  dsh-shell  │────▶│  dsh-bash-local  │     │ dsh-tool-bash│
+│ (definition)│     │    (provider)    │     │(consumer/tool)│
+└─────────────┘     └──────────────────┘     └──────────────┘
+       ▲                                            │
+       └────────────────────────────────────────────┘
+                    inject: ['shell']</code></pre>
+
+<table>
+  <thead>
+    <tr><th>角色</th><th>负责</th><th>Bash 例子</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Service Definition</strong></td><td>定义服务接口 + 请求/结果类型</td><td><code>dsh-shell</code></td></tr>
+    <tr><td><strong>Service Provider</strong></td><td>真正执行</td><td><code>dsh-bash-local</code>（本地执行）</td></tr>
+    <tr><td><strong>Consumer</strong></td><td>把它暴露成模型可调用的工具</td><td><code>dsh-tool-bash</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  好处是：<strong>换提供方时，Definition 和工具都不用动</strong>——只换 <code>cordis.yml</code> 里那一行。这也正好是你 mission 里「可扩展」的具体含义。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>但不要预防性拆分。</strong> 官方明确说了：只有角色需要<strong>独立演进</strong>时才拆成不同包。一个简单的工具插件就写在一个包里，别为了「架构好看」拆出三个空壳。另一条：<strong>显式优于隐式</strong>——默认值用显式的 <code>resolve(request)</code> 处理，不要在 <code>run()</code> 里藏一个 <code>?? default</code>。
+  </p>
+</div>
+
+<h2>毕业：这六课给了你什么</h2>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>你拿到的能力</th><th>配套参考</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td>心智模型：Agent = Model + Harness，一切皆插件</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td>跑起来：安装、四种模式、沙箱三档</td>
+      <td>—</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td>装配：市场、视觉、文件引用、界面</td>
+      <td><a href="../reference/plugins-quick-ref.html">插件速查表</a></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td>控制与追溯：沙箱边界、审批、Trajectory</td>
+      <td><a href="../reference/sandbox-trajectory-quick-ref.html">沙箱与 Trajectory 速查表</a></td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td>造物：写自己的 Tool 插件并验证</td>
+      <td><a href="../reference/tool-plugin-dev-quick-ref.html">Tool 插件开发速查表</a></td>
+    </tr>
+    <tr>
+      <td>6</td>
+      <td>长期化：换模型、控成本、定架构</td>
+      <td><a href="../reference/model-cost-quick-ref.html">模型与成本速查表</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>一套能天天用的作业流</h3>
+
+<table>
+  <thead>
+    <tr><th>阶段</th><th>动作</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>开工前</strong></td>
+      <td>用可丢弃工作区；确认版本已 pin；凭证不在工作区内；<code>workspace-write</code> + <code>ask</code></td>
+    </tr>
+    <tr>
+      <td><strong>干活时</strong></td>
+      <td>任务拆小、一个会话一件事；粗活用便宜模型；不确定的操作先看审批弹窗再点同意</td>
+    </tr>
+    <tr>
+      <td><strong>收工后</strong></td>
+      <td>看一眼 token 消耗；有异常行为就翻 Trajectory 定位到具体那一步</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>最后一步：去社区</h2>
+
+<p>
+  这门课能给你知识和技能，但<strong>智慧只能从真实使用和别人身上来</strong>。你现在最该做的不是再学一课，而是拿一个真实的小项目去用它，然后把遇到的问题带回来。
+</p>
+
+<ul>
+  <li><a href="https://github.com/deepseek-ai/deepseek-harness/discussions" target="_blank">GitHub Discussions</a> — 官方问答区。踩坑、版本问题、插件开发，先在这里搜，再提问。</li>
+  <li><a href="https://github.com/topics/dsh-plugin" target="_blank">GitHub dsh-plugin topic</a> — 社区插件索引，发现新插件。</li>
+  <li>把你写的第一个插件开源出去——这是检验你是否真的学会了最快的方式。</li>
+</ul>
+
+<blockquote>
+  <p>
+    DSH 仍是 Developer Preview，<strong>API 和版本都还会变</strong>。你手上这几份速查表就是为这个准备的：过几个月回来对一下，比重新读一遍文档快得多。
+  </p>
+</blockquote>
+
+<h2>本节课的小测验</h2>
+
+<div class="quiz" data-quiz="1">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">关于 Agent 成本，下列哪个理解是正确的？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">上下文越长每一步都越贵</li>
+    <li data-correct="false">上下文长度与成本没关系</li>
+    <li data-correct="false">只有回复变长才会更费钱</li>
+    <li data-correct="false">模型选贵的才会更费钱</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">关于能力拆分，官方的主张是？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">需要独立演进才拆包</li>
+    <li data-correct="false">一律拆成三个包更好</li>
+    <li data-correct="false">代码行数多了就拆包</li>
+    <li data-correct="false">每个角色都必须拆包</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>课程完结 🎓</strong> 回到你最初的 mission，六条成功标准现在都该打勾了：能一句话解释 Harness 的定位 · 能跑通 Web UI 和真实任务 · 能说出四种模式 · 装了 3 个以上插件 · <strong>写了并验证了一个 Tool 插件</strong> · 能配沙箱、看轨迹、控成本。
+  </p>
+  <p>
+    接下来最好的复习不是重看课件，而是<strong>拿一个你真正想做的 Agent 小项目，从第 1 课的动作重新做一遍</strong>——这次不用看教程。卡住的地方，随时回来问我。
+  </p>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://harnessdeepseek.org/guides.html#practices" target="_blank">官方 Guides · 首次运行最佳实践</a> — 五条实践 + 排错速查</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/practice/llm-adapter" target="_blank">官方 · LLM 适配器</a> — 接入新模型提供方的完整契约</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/practice/" target="_blank">官方 · 能力的三层角色设计</a> — Definition / Provider / Consumer</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/token-meter" target="_blank">官方参考 · Token 计量</a> — totalTokens / surfaceTokens / baseline</p>
+  </section>
+  <section>
+    <h4>本课配套参考</h4>
+    <p><a href="../reference/model-cost-quick-ref.html">模型与成本速查表</a> — 换模型 + 控成本 + 最佳实践，打印友好</p>
+  </section>
+  <section>
+    <h4>上一课</h4>
+    <p><a href="0005-first-tool-plugin.html">← 第 5 课 · 写你的第一个 Tool 插件</a></p>
+  </section>
+  <section>
+    <h4>去社区</h4>
+    <p><a href="https://github.com/deepseek-ai/deepseek-harness/discussions" target="_blank">GitHub Discussions</a> · <a href="https://github.com/topics/dsh-plugin" target="_blank">dsh-plugin topic</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>课程结束了，但我还在。换模型报错、账单异常、架构拿不准——随时问我。</p>
+  </section>
+</footer>
+
+<script>
+  // 每题独立的反馈文案，按 data-quiz 区分
+  const feedbacks = {
+    '1': {
+      correct: '对。每次模型调用都要重发整个 surface，所以上下文越长，之后每一步都更贵——这是累积成本。',
+      wrong: '再想想。每次调用都会把整个 surface 重新发一遍，因此上下文越长，后续每一步都更贵，是累积的。'
+    },
+    '2': {
+      correct: '对。官方主张「不要预防性拆分」——只有角色需要独立演进时才拆成不同包，简单工具一个包就够。',
+      wrong: '再想想。官方明确说不要预防性拆分：只有角色需要独立演进时才分包，否则一个包承担多个角色即可。'
+    }
+  };
+
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const fb = feedbacks[quiz.dataset.quiz];
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const isCorrect = opt.dataset.correct === 'true';
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (isCorrect) {
+          opt.classList.add('correct');
+          feedback.textContent = fb.correct;
+        } else {
+          opt.classList.add('wrong');
+          const correct = quiz.querySelector('[data-correct="true"]');
+          if (correct) correct.classList.add('correct');
+          feedback.textContent = fb.wrong;
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

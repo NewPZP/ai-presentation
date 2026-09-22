@@ -35,15 +35,27 @@ const COURSES = [
     stages: []
   },
   {
-    title: "deepseek harness",
-    status: "预告 · 即将上线",
-    desc: "快速上手，我编程agent的版本答案，透明，可定制，实惠，",
-    highlights: ["版本答案"],
-    stats: [],
-    gradient: "#92400e, #f59e0b",
-    path: "",
-    date: "预计 2026 年 9 月底上线",
-    stages: []
+    title: "DeepSeek Harness 上手必备",
+    status: "已完结 · 3 阶段",
+    desc: "一切皆插件。六节课从跑通到造物：装插件、看轨迹、写自己的 Tool，安全问题，管住钱袋子。",
+    highlights: ["版本答案", "亲手写插件"],
+    stats: [{ big: "6", lbl: "节课" }, { big: "3", lbl: "阶段" }, { big: "~95min", lbl: "总时长" }],
+    gradient: "#312e81, #4d6bfe",
+    path: "deepseek-harness-course",
+    stages: [
+      { name: "阶段一 · 入门", lessons: [
+        { n: "01", t: "DeepSeek Harness 是什么？", f: "0001-what-is-deepseek-harness.html" },
+        { n: "02", t: "安装 DSH 与四种运行模式", f: "0002-install-and-modes.html" }
+      ]},
+      { name: "阶段二 · 装配与控制", lessons: [
+        { n: "03", t: "装上你的第一批插件", f: "0003-essential-plugins.html" },
+        { n: "04", t: "沙箱、审批与 Trajectory", f: "0004-sandbox-and-trajectory.html" }
+      ]},
+      { name: "阶段三 · 造物与长期化", lessons: [
+        { n: "05", t: "写你的第一个 Tool 插件", f: "0005-first-tool-plugin.html" },
+        { n: "06", t: "模型、成本与毕业", f: "0006-models-cost-and-graduation.html" }
+      ]}
+    ]
   }
 ,
   {

@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · 沙箱与 Trajectory 速查表</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">沙箱与 Trajectory 速查表</h1>
+  <p class="lesson-meta">安全边界 + 审批规则 + 轨迹读法 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  数据对应 DSH <code>0.1.2-rc.1</code>（2026-09）。Developer Preview 阶段，边界可能随版本变化。
+</p>
+
+<h2>一句话</h2>
+
+<blockquote>
+  <p>
+    沙箱只围住<strong>写</strong>，审批只拦<strong>「要更多权限」</strong>，Trajectory 记录<strong>一切</strong>。三者叠加才有可用的安全姿势。
+  </p>
+</blockquote>
+
+<h2>沙箱三档</h2>
+
+<table>
+  <thead>
+    <tr><th>模式</th><th>文件效果</th><th>管不到</th><th>用在</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>read-only</code></td>
+      <td>写入全部拒绝（默认兜底）</td>
+      <td rowspan="3" style="vertical-align:middle; background:var(--paper-warm);">
+        <strong>网络访问</strong><br>
+        <strong>进程可见性</strong><br>
+        <strong>凭证读取</strong>
+      </td>
+      <td>纯阅读、不信任的任务</td>
+    </tr>
+    <tr>
+      <td><code>workspace-write</code></td>
+      <td>只写工作区根目录 + 后端临时目录</td>
+      <td>日常使用</td>
+    </tr>
+    <tr>
+      <td><code>danger-full-access</code></td>
+      <td>隔离被绕过，无隔离承诺</td>
+      <td>只在完全清楚后果时</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>后端：</strong>Linux 用 bwrap / Landlock，macOS 用 Seatbelt，Windows 用 ACL 受限令牌。如果没有任何后端可用，DSH 会抛 <code>SANDBOX_UNAVAILABLE</code>，而<strong>不是</strong>裸跑。
+</p>
+
+<h2>审批规则</h2>
+
+<table>
+  <thead>
+    <tr><th>情况</th><th>会弹审批吗</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>普通命令，在现有权限内</td><td><strong>不会</strong>——一开始就不需要批准</td></tr>
+    <tr><td>命令请求比当前会话更大的权限</td><td><strong>会</strong>，这才是审批触发点</td></tr>
+    <tr><td>调用不请求权限，而是<strong>修改会话设置本身</strong></td><td><strong>不会</strong> ← 2026-08 的 CVE 就从这里进来</td></tr>
+  </tbody>
+</table>
+
+<h2>安全清单（每次开工前过一遍）</h2>
+
+<ol>
+  <li><strong>用可丢弃环境</strong>：一次性目录或容器，不放真实项目、真实密钥。</li>
+  <li><strong>凭证不进工作区</strong>：沙箱限制写，不限制读——<code>~/.ssh</code>、<code>~/.aws</code> 都在它的读取范围内。</li>
+  <li><strong>默认 <code>workspace-write</code> + <code>ask</code></strong>，不为图省事开 <code>danger-full-access</code>。</li>
+  <li><strong>锁定版本</strong>，并确认版本号 ≥ <code>0.1.2-rc.1</code>。</li>
+  <li><strong>桌面版要单独查</strong>：它内置的 harness 版本由封装作者决定，不等于官方最新。</li>
+  <li><strong>插件、MCP、技能、钩子先审查再执行</strong>——它们是代码。</li>
+  <li>记住官方声明：<strong>未经安全审计，沙箱与审批「不保证隔离」</strong>。</li>
+</ol>
+
+<h2>Trajectory 事件读法</h2>
+
+<pre><code>turn/start                  <span class="c"># 回合开始</span>
+ ├─ step/start              <span class="c"># 一步 = 一次模型调用 + 其工具执行</span>
+ │   ├─ user/message        <span class="c"># 用户输入 / 注入的上下文</span>
+ │   ├─ assistant/message   <span class="c"># 模型输出（+ usage）</span>
+ │   ├─ tool/call           <span class="c"># 调了谁、参数是什么</span>
+ │   └─ tool/result         <span class="c"># 结果，或 error</span>
+ └─ turn/end                <span class="c"># reason: completed / blocked / error / max-tokens / aborted</span></code></pre>
+
+<table>
+  <thead>
+    <tr><th>你想知道</th><th>去看</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>哪一步失败了</td><td>带 <code>error</code> 的 <code>tool/result</code></td></tr>
+    <tr><td>这一回合为什么结束</td><td><code>turn/end</code> 的 <code>reason</code></td></tr>
+    <tr><td>这轮花了多少钱</td><td><code>assistant/message</code> 的 <code>usage</code>（0.1.2 也直接显示在回答末尾）</td></tr>
+    <tr><td>它到底看到了什么</td><td>会话日志里的上下文注入记录</td></tr>
+  </tbody>
+</table>
+
+<h2>轨迹工具</h2>
+
+<table>
+  <thead>
+    <tr><th>工具</th><th>用途</th><th>入口</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>内置 Trajectory 视图</strong></td>
+      <td>实时按来源检视会话记录（首选）</td>
+      <td>Web UI 的 <code>Chat / Trajectory</code> tab</td>
+    </tr>
+    <tr>
+      <td><strong>dsh-trajectory</strong></td>
+      <td>导出为可分享的自包含 HTML（附 SHA-256）</td>
+      <td><code>npx --yes github:ciceroyang/dsh-trajectory#v0.4.2 ./session.jsonl.zstd --out report.html</code></td>
+    </tr>
+    <tr>
+      <td><strong>dsh-replay</strong></td>
+      <td>时间旅行调试：replay / visualize / diff</td>
+      <td>进阶，精修 Agent 行为时用</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>存储形态：</strong><code>session.jsonl.zstd</code>——zstd 压缩的 append-only JSONL，一行一个事件。resume / fork / search / replay 都基于同一条流。
+</p>
+
+<h2>版本安全（CVE-2026-82533）</h2>
+
+<table>
+  <thead>
+    <tr><th>版本</th><th>状态</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>0.1.1-rc.2</code> 及更早</td><td><strong>受影响</strong>（本机接口无认证，可被诱导关闭沙箱）</td></tr>
+    <tr><td><code>0.1.2-alpha.1</code></td><td>已修复，但只在 GitHub，未上 npm</td></tr>
+    <tr><td><code>0.1.2-alpha.2</code></td><td>首个带修复的 npm 版本</td></tr>
+    <tr><td><code>0.1.2-rc.1</code></td><td>当前 npm 版，已含修复（一次性 token + 签名 cookie）</td></tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    修复只解决了<strong>接口认证</strong>，没有改变沙箱：「读取和网络访问不受限制」在 <code>0.1.2-rc.1</code> 依然成立。
+  </p>
+</blockquote>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://harnessdeepseek.org/features.html#sandbox" target="_blank">官方 Features 页 · Sandbox &amp; Trajectory</a></p>
+    <p><a href="https://thehackernews.com/2026/09/deepseek-harness-flaw-let-ai-agents.html" target="_blank">The Hacker News: CVE-2026-82533</a></p>
+    <p><a href="https://github.com/ciceroyang/dsh-trajectory" target="_blank">dsh-trajectory</a> · <a href="https://github.com/zoahdev/dsh-replay" target="_blank">dsh-replay</a></p>
+  </section>
+  <section>
+    <h4>相关课程</h4>
+    <p><a href="../lessons/0002-install-and-modes.html">第 2 课 · 安装 DSH 与四种运行模式</a></p>
+    <p><a href="../lessons/0004-sandbox-and-trajectory.html">第 4 课 · 沙箱、审批与 Trajectory</a></p>
+  </section>
+</footer>
+
+</body>
+</html>

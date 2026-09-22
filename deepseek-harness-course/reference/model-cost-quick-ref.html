@@ -1,0 +1,244 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · 模型与成本速查表</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">模型与成本速查表</h1>
+  <p class="lesson-meta">换模型 + 控成本 + 最佳实践 + 排错 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  对应 DSH <code>0.1.2-rc.1</code>（2026-09）。Developer Preview 阶段，口径与 API 可能变化。
+</p>
+
+<h2>一句话</h2>
+
+<blockquote>
+  <p>
+    模型适配器是插件，所以换供应商<strong>不用改 Harness</strong>；而每一次模型调用都要<strong>重发整个 surface</strong>，所以省钱的主战场是<strong>上下文</strong>。
+  </p>
+</blockquote>
+
+<h2>换模型：三个层次</h2>
+
+<table>
+  <thead>
+    <tr><th>层次</th><th>做法</th><th>适合</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>换配置</td><td>Settings → Models</td><td>已支持的供应商，绝大多数情况</td></tr>
+    <tr><td>换 provider</td><td><code>cordis.yml</code> 里的 <code>provider</code> / <code>model</code></td><td>按任务分派不同模型</td></tr>
+    <tr><td>写适配器</td><td>继承 <code>LlmAdapter</code>，实现 <code>stream()</code></td><td>供应商还没有适配器</td></tr>
+  </tbody>
+</table>
+
+<h2>写一个 LLM 适配器（最小骨架）</h2>
+
+<pre><code><span class="k">class</span> MyAdapter <span class="k">extends</span> LlmAdapter {
+  <span class="k">async</span> *stream(options: GenerateOptions): AsyncIterable&lt;StreamChunk&gt; {
+    <span class="c">// 1. options.messages → 供应商格式</span>
+    <span class="c">// 2. 调流式 API（记得透传 options.signal）</span>
+    <span class="c">// 3. 响应 → StreamChunk 分片</span>
+  }
+}
+
+<span class="k">export const</span> name = <span class="s">'my-llm-adapter'</span>
+<span class="k">export const</span> inject = [<span class="s">'llm'</span>]
+
+<span class="k">export function</span> apply(ctx: Context, config: Config) {
+  ctx.llm.registerAdapter(config.providers, <span class="k">new</span> MyAdapter(config.apiKey))
+}</code></pre>
+
+<h3>StreamChunk 协议要点</h3>
+
+<table>
+  <thead>
+    <tr><th>规则</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>block-start</code> / <code>block-end</code></td><td>必须成对；<code>index</code> 从 0 递增</td></tr>
+    <tr><td><code>text-delta</code></td><td>逐片输出文本</td></tr>
+    <tr><td><code>tool-call-delta</code></td><td><code>argumentsDelta</code> 是原始 JSON 文本的增量</td></tr>
+    <tr><td><code>usage</code></td><td><strong>必须在 <code>finish</code> 之前</strong>产出</td></tr>
+    <tr><td><code>finish</code></td><td><strong>必须是最后一个分片</strong>；<code>tool-calls</code> 表示请求执行工具</td></tr>
+  </tbody>
+</table>
+
+<pre><code># cordis.yml 里接上 provider / model
+- id: my-llm
+  name: <span class="s">'./src/my-llm-adapter.ts'</span>
+  config:
+    apiKey: !!js process.env.MY_API_KEY     # 从环境变量读，别写死
+    providers: [my-provider]
+
+- id: agent-loop
+  name: <span class="s">'@deepseek-ai/dsh-agent-loop'</span>
+  config:
+    agents:
+      - id: main
+        provider: my-provider
+        model: my-model-v1</code></pre>
+
+<p>
+  <strong>照抄这两个已交付实现：</strong><code>packages/llm/llm-deepseek/</code>（OpenAI 兼容格式）与 <code>packages/llm/llm-pi-ai/</code>（不同格式）。国产模型多走 OpenAI 兼容协议，改 endpoint + model id 即可。
+</p>
+
+<p>
+  <strong>错误处理：</strong>传输/协议故障抛带稳定 code 的 <code>LlmError</code>（不要依赖普通 <code>Error</code> 被自动转换）；每个 HTTP 请求合并 <code>attributionHeaders()</code>，并传递 <code>options.signal</code>；不支持的字段要抛错，<strong>不得静默丢弃</strong>。
+</p>
+
+<h2>成本：两个口径</h2>
+
+<table>
+  <thead>
+    <tr><th>数字</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>totalTokens</code></td><td>当前<strong>请求 + 响应</strong>压力</td></tr>
+    <tr><td><code>surfaceTokens</code></td><td>当前<strong>表层</strong>的路由定价总量 = 各节点价格之和</td></tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    每一次模型调用都要<strong>重发整个 surface</strong>。上下文越长，<strong>不是贵一次，而是之后每一步都更贵</strong>——成本是累积的。
+  </p>
+</blockquote>
+
+<table>
+  <thead>
+    <tr><th><code>baseline.kind</code></th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>usage</code></td><td>最近一次成功的供应商调用请求结构相同 → 用<strong>真实 usage</strong>（准）</td></tr>
+    <tr><td><code>estimated</code></td><td>无可用锚点 → 服务按<strong>启发式估算</strong>（仅供方向）</td></tr>
+  </tbody>
+</table>
+
+<h2>省钱四个动作</h2>
+
+<ol>
+  <li><strong>控制 surface，不是控制回复。</strong> 做完就开新会话；长任务用上下文压缩而非硬扛。</li>
+  <li><strong>按任务选模型。</strong> 粗活用便宜快的，难活才上强模型，用 <code>provider</code>/<code>model</code> 分派。</li>
+  <li><strong>利用峰谷定价。</strong> 闲时半价，可延迟的批量任务挪到闲时；<code>dsh-peak-indicator</code> 显示当前档期与切换倒计时。</li>
+  <li><strong>装成本看板。</strong> <code>dsh-cost-meter</code> 实时看会话花费与当日预算。</li>
+</ol>
+
+<p>
+  要定位「钱烧在哪一步」，用第 4 课的 Trajectory：每一轮 token 用量都在时间线上。
+</p>
+
+<h2>官方最佳实践（首次运行）</h2>
+
+<ol>
+  <li>在<strong>空的可丢弃目录</strong>开始，不用家目录或客户 monorepo。</li>
+  <li>保持 <code>workspace-write</code> + <code>ask</code>，不从 <code>danger-full-access</code> 起步。</li>
+  <li><strong>pin 版本</strong>——不带版本号的 <code>npx</code> 跟随 latest。</li>
+  <li>审查<strong>插件 / MCP 服务器 / Skills / Hooks</strong> 再让它们执行。</li>
+  <li><strong>凭证不进工作区</strong>——沙箱限制写，不限制读。</li>
+</ol>
+
+<h2>能力三层拆分（架构）</h2>
+
+<table>
+  <thead>
+    <tr><th>角色</th><th>负责</th><th>Bash 例子</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Service Definition</td><td>服务接口 + 请求/结果类型</td><td><code>dsh-shell</code></td></tr>
+    <tr><td>Service Provider</td><td>真正执行</td><td><code>dsh-bash-local</code></td></tr>
+    <tr><td>Consumer</td><td>暴露成模型可调用的工具</td><td><code>dsh-tool-bash</code></td></tr>
+  </tbody>
+</table>
+
+<ul>
+  <li><strong>换提供方不动 Definition 和工具</strong>——只换 <code>cordis.yml</code> 一行。</li>
+  <li><strong>不要预防性拆分</strong>：只有角色需要独立演进时才分包；简单工具一个包够。</li>
+  <li><strong>显式优于隐式</strong>：默认值用显式 <code>resolve(request)</code>，不要藏在 <code>run()</code> 里的 <code>?? default</code>。</li>
+</ul>
+
+<h2>排错速查</h2>
+
+<table>
+  <thead>
+    <tr><th>症状</th><th>原因 / 解决</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>启动失败 / <code>node-domexception</code></td>
+      <td>Node 版本：需 <code>^22.19.0</code> 或 <code>&gt;=24.0.0</code></td>
+    </tr>
+    <tr>
+      <td>端口 3080 <code>EACCES</code></td>
+      <td>Windows 上多为 Hyper-V / WSL2 / Docker 占用；别 chmod，停占用或换端口</td>
+    </tr>
+    <tr>
+      <td>页面加载但 API 403</td>
+      <td>不在信任 Host 列表——用 <code>127.0.0.1</code>，别用 localhost 或 IP</td>
+    </tr>
+    <tr>
+      <td>中文路径 <code>workspace-invalid-path</code></td>
+      <td><strong><code>0.1.2-rc.1</code> 已修复</strong>该截断问题；旧版改用 ASCII 路径，且别选盘根</td>
+    </tr>
+    <tr>
+      <td><code>ERR_MODULE_NOT_FOUND</code></td>
+      <td>用 pnpm 装了<strong>发布版</strong> CLI——改用 npx / npm；pnpm 只用于源码 checkout</td>
+    </tr>
+    <tr>
+      <td>沙箱内 HTTPS 报 <code>SEC_E_NO_CREDENTIALS</code></td>
+      <td>沙箱破坏了 Windows Schannel；换不用 Schannel 的客户端，或经审批在沙箱外执行。网络本就在 SandboxMode 之外</td>
+    </tr>
+    <tr>
+      <td>Windows 沙箱 ACL 报错</td>
+      <td>把 HKCU 的 TMP/TEMP 指到你自己拥有的目录；工作区所有者要是你而不是 Administrators；别用 <code>D:\</code> 这类盘根</td>
+    </tr>
+    <tr>
+      <td>杀毒软件告警</td>
+      <td>先确认是 <code>@deepseek-ai/dsh</code>，再比对官方 SHA</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>本课程参考文档索引</h2>
+
+<table>
+  <thead>
+    <tr><th>文档</th><th>用在</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><a href="cordis-glossary.html">Cordis 术语表</a></td><td>写插件前的概念底子</td></tr>
+    <tr><td><a href="plugins-quick-ref.html">插件速查表</a></td><td>选插件、装插件</td></tr>
+    <tr><td><a href="sandbox-trajectory-quick-ref.html">沙箱与 Trajectory 速查表</a></td><td>安全边界、轨迹读法</td></tr>
+    <tr><td><a href="tool-plugin-dev-quick-ref.html">Tool 插件开发速查表</a></td><td>写工具插件</td></tr>
+    <tr><td><a href="model-cost-quick-ref.html">模型与成本速查表</a></td><td>换模型、控成本、排错</td></tr>
+  </tbody>
+</table>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://harnessdeepseek.org/guides.html" target="_blank">官方 Guides · 最佳实践与排错</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/practice/llm-adapter" target="_blank">官方 · LLM 适配器</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/practice/" target="_blank">官方 · 能力的三层角色设计</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/subsystems/token-meter" target="_blank">官方参考 · Token 计量</a></p>
+  </section>
+  <section>
+    <h4>相关课程</h4>
+    <p><a href="../lessons/0004-sandbox-and-trajectory.html">第 4 课 · 沙箱、审批与 Trajectory</a>（成本归因）</p>
+    <p><a href="../lessons/0006-models-cost-and-graduation.html">第 6 课 · 模型、成本与毕业</a></p>
+  </section>
+</footer>
+
+</body>
+</html>

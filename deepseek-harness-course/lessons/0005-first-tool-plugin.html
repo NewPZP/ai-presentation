@@ -1,0 +1,428 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 5 课 · 写你的第一个 Tool 插件</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 5 课 · DeepSeek Harness 实战</p>
+  <h1 class="lesson-title">写你的第一个 Tool 插件</h1>
+  <p class="lesson-meta">从 <code>apply(ctx)</code> 到模型真的调用它 · 约 20 分钟</p>
+</header>
+
+<main>
+
+<h2>今天你从「用」变成「造」</h2>
+
+<p>
+  <a href="0003-essential-plugins.html">第 3 课</a>你装了别人的插件，<a href="0001-what-is-deepseek-harness.html">第 1 课</a>你记住了「一切皆插件」。现在兑现那句话：<strong>自己写一个</strong>。
+</p>
+
+<p>
+  目标是给模型一个它<strong>原本没有的能力</strong>——一个由你定义的工具。你要走完这四步，一步都不能跳：
+</p>
+
+<ol>
+  <li>写一个插件的骨架（就是一个 <code>apply</code> 函数）</li>
+  <li>用 <code>defineTool</code> 注册一个工具</li>
+  <li>把它加载进 DSH，让模型看见它</li>
+  <li>用 <a href="0004-sandbox-and-trajectory.html">第 4 课</a>的 Trajectory 验证它<strong>真的被调用了</strong></li>
+</ol>
+
+<h2>一个插件，就是一个 apply 函数</h2>
+
+<p>
+  这可能是整门课最反直觉的一句话：在 Harness 里，插件的全部契约就是导出一个 <code>name</code> 和一个 <code>apply</code> 函数。框架加载时调用 <code>apply</code>，把 <code>ctx</code>（上下文对象）递给你，你通过它注册能力。
+</p>
+
+<pre><code><span class="c">// 这就是一个完整的插件</span>
+<span class="k">import type</span> { Context } <span class="k">from</span> <span class="s">'@deepseek-ai/cordis'</span>
+
+<span class="k">export const</span> name = <span class="s">'my-plugin'</span>
+
+<span class="k">export function</span> apply(ctx: Context) {
+  <span class="c">// 在这里注册能力</span>
+}</code></pre>
+
+<p>
+  没有基类要继承，没有生命周期方法要重写。你<strong>注册什么，就得到什么</strong>；插件卸载时，通过 <code>ctx</code> 注册的一切（工具、事件监听、定时器）会自动清理——这就是术语表里说的「零泄漏生命周期」。
+</p>
+
+<blockquote>
+  <p>
+    需要手动清理的资源（比如一个网络连接）才用 <code>ctx.effect()</code>：传入一个函数，返回一个清理函数，卸载时框架替你调用它。
+  </p>
+</blockquote>
+
+<h2>第二步：声明你依赖什么</h2>
+
+<p>
+  工具注册表是一个<strong>服务</strong>（<code>tools</code>）。你要用它，就得<strong>声明依赖</strong>：
+</p>
+
+<pre><code><span class="k">export const</span> name = <span class="s">'greet-tool'</span>
+<span class="k">export const</span> inject = [<span class="s">'tools'</span>]   <span class="c">// 声明：我需要 tools 服务</span></code></pre>
+
+<p>
+  这一行的作用是：<strong>Cordis 会等 <code>tools</code> 服务就绪后，才调用你的 <code>apply</code></strong>。这样你在 <code>apply</code> 里写 <code>ctx.tools.register(...)</code> 时，注册表一定已经存在了。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>为什么不能省？</strong> 插件的加载顺序不是你能保证的。没有 <code>inject</code>，你的插件可能在工具注册表就绪之前执行，然后因为 <code>ctx.tools</code> 是 <code>undefined</code> 而崩掉。声明依赖 = 让框架替你排队。
+  </p>
+</div>
+
+<h2>第三步：defineTool —— 告诉模型「有这么个工具」</h2>
+
+<p>
+  把 <code>my-plugin.ts</code> 的内容换成下面这段。这是本课的核心，请逐行读：
+</p>
+
+<pre><code><span class="k">import type</span> { Context } <span class="k">from</span> <span class="s">'@deepseek-ai/cordis'</span>
+<span class="k">import</span> { defineTool } <span class="k">from</span> <span class="s">'@deepseek-ai/dsh-tools'</span>
+
+<span class="k">export const</span> name = <span class="s">'greet-tool'</span>
+<span class="k">export const</span> inject = [<span class="s">'tools'</span>]
+
+<span class="k">export function</span> apply(ctx: Context) {
+  ctx.tools.register(defineTool({
+    name: <span class="s">'greet'</span>,
+    description: <span class="s">'Greet someone by name.'</span>,        <span class="c">// 模型看到的就是这句</span>
+    parameters: {
+      name: { type: <span class="s">'string'</span>, required: <span class="k">true</span>, description: <span class="s">'要问候的名字'</span> },
+    },
+    output: {
+      schema: { type: <span class="s">'string'</span> },
+      render: (_args, value) =&gt; [{ type: <span class="s">'text'</span>, text: value }],
+    },
+    <span class="k">async</span> execute(args) {
+      <span class="k">return</span> <span class="s">`Hello, ${args.name}!`</span>          <span class="c">// 返回「规范值」</span>
+    },
+  }))
+}</code></pre>
+
+<p>四个字段，各有明确的分工：</p>
+
+<table>
+  <thead>
+    <tr><th>字段</th><th>作用</th><th>关键点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>name</code> / <code>description</code></td>
+      <td>模型决定要不要调用你的依据</td>
+      <td><strong>这就是提示词工程</strong>——描述写不清，模型就不会用</td>
+    </tr>
+    <tr>
+      <td><code>parameters</code></td>
+      <td>声明参数结构</td>
+      <td><code>defineTool</code> 会据此<strong>自动校验</strong>模型生成的参数，并把类型推给 <code>execute</code></td>
+    </tr>
+    <tr>
+      <td><code>output.schema</code></td>
+      <td>声明返回值的<strong>规范类型</strong></td>
+      <td>返回结构化值，而不是拼好的字符串</td>
+    </tr>
+    <tr>
+      <td><code>output.render</code></td>
+      <td>把规范值转成<strong>模型可见的内容</strong></td>
+      <td>负责「给人/模型看的自然语言」</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  留意 <code>execute(args)</code> 里的 <code>args</code>：它的类型是<strong>从 <code>parameters</code> 推导出来的</strong>。你不用自己解析 JSON，模型传进来的参数已经被校验并填好类型了。
+</p>
+
+<h2>第四步：加载它（patch 覆盖层）</h2>
+
+<p>
+  插件写好了，怎么让 DSH 认识它？官方教程用一个<strong>覆盖层文件</strong>。在仓库根目录建 <code>scratch-plugin/cordis.yml</code>：
+</p>
+
+<pre><code>- insert:
+    - id: greet
+      name: <span class="s">'/absolute/path/to/deepseek-harness/scratch-plugin/src/my-plugin.ts'</span></code></pre>
+
+<div class="callout">
+  <p>
+    <strong>路径必须是绝对路径。</strong> patch 文件只贡献配置，它不会改变 loader 解析模块路径时用的基准目录——写相对路径会找不到文件。
+  </p>
+</div>
+
+<p>用这个覆盖层启动：</p>
+
+<pre><code><span class="c"># 官方教程路线：在 deepseek-harness 仓库 checkout 里运行</span>
+pnpm dsh web --patch ./scratch-plugin/cordis.yml</code></pre>
+
+<div class="callout">
+  <p>
+    <strong>为什么官方教程要求源码 checkout？</strong> 因为 <code>defineTool</code> 来自 <code>@deepseek-ai/dsh-tools</code>，TypeScript 的类型也从工作区解析。你前几课用的 <code>npx</code> 安装版适合<strong>用</strong>插件；<strong>写</strong>插件时，按官方教程克隆仓库（<code>git clone</code> + <code>pnpm install</code>）是最稳的路径。写完之后要装进你日常那个 DSH，走本节最后的「打包」。
+  </p>
+</div>
+
+<h2>验证它真的生效：还是那三层证据</h2>
+
+<p>
+  <a href="0003-essential-plugins.html">第 3 课</a>我们用「三层证据」判断一个插件有没有真正生效。这次你写的是自己的插件，照样套：
+</p>
+
+<table>
+  <thead>
+    <tr><th>证据</th><th>怎么看</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>1 · 加载了</strong></td>
+      <td>在 <code>apply</code> 里写一句 <code>console.log('[greet-tool] loaded')</code>，启动时终端应打印出来</td>
+    </tr>
+    <tr>
+      <td><strong>2 · 工具进表了</strong></td>
+      <td>工具的 schema 会自动流入系统提示词的组装过程——模型「看得见」它</td>
+    </tr>
+    <tr>
+      <td><strong>3 · 真的被调用了</strong></td>
+      <td>输入 <code>Use the greet tool to greet Ada.</code>，模型调用后返回 <code>Hello, Ada!</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  第三层才是最硬的证据，而且这次你有了<a href="0004-sandbox-and-trajectory.html">第 4 课</a>的武器：<strong>打开 Trajectory，你应该能看到一次 <code>tool/call</code>（name 是 <code>greet</code>、参数是 <code>{"name":"Ada"}</code>）和对应的 <code>tool/result</code></strong>。看不到这两条事件，就说明你的工具没真正跑起来——这正是第 4 课教的读法。
+</p>
+
+<blockquote>
+  <p>
+    第 3 课的验收思路、第 4 课的 Trajectory、这一课的插件——三课在这里合上了。以后每写一个工具，都走这条验证链。
+  </p>
+</blockquote>
+
+<h2>execute 的三条硬规则</h2>
+
+<p>
+  工具能跑起来之后，这四条约定决定了它「生产可用」还是「玩具」（来自<a href="https://deepseek-harness.github.io/deepseek-harness/reference/cookbook/adding-a-tool" target="_blank">官方工具编写参考</a>）：
+</p>
+
+<ol>
+  <li>
+    <strong>参数已替你校验，但业务约束要自己查。</strong> <code>defineTool</code> 会校验类型、必填键、字面量、联合类型和嵌套值。但「非空字符串」「必须是正数」「A 字段和 B 字段不能同时出现」这类规则它管不了，得你在 <code>execute</code> 里手动检查。
+  </li>
+  <li>
+    <strong>返回「规范值」，不要返回内容块。</strong> <code>execute</code> 只返回 <code>output.schema</code> 声明的那个值；转成自然语言是 <code>output.render</code> 的事。这样 PTC 模式下模型才能<strong>以编程方式</strong>拿到结构化结果，而不是去解析一段文字。
+  </li>
+  <li>
+    <strong>抛异常 = <code>isError</code>。</strong> 基础设施故障就抛异常，注册表会捕获。但<strong>业务上的「不理想结果」不该抛异常</strong>——比如命令以非零状态退出，那是个合法的领域结果，写进规范值让渲染器去解释。
+  </li>
+  <li>
+    <strong>遵守 <code>exec.signal</code>。</strong> 信号触发时，取消你正在进行的工作。长任务不要无视它。
+  </li>
+</ol>
+
+<h2>让它可配置：官方的一条设计原则</h2>
+
+<p>
+  硬编码的问候语只配当教学示例。Harness 有一条明确约定：
+</p>
+
+<blockquote>
+  <p>
+    <strong>凡是不同部署可能需要取不同值的参数，都必须定义成配置字段。</strong> 检验标准是：<em>能不能在 <code>cordis.yml</code> 里改掉它，而不用动代码？</em>
+  </p>
+</blockquote>
+
+<p>做法是导出一个 <code>Config</code> 类型和同名的 schema，默认值写在 schema 里：</p>
+
+<pre><code><span class="k">import</span> Schema <span class="k">from</span> <span class="s">'@deepseek-ai/schemastery'</span>
+
+<span class="k">export interface</span> Config {
+  greeting: <span class="k">string</span>
+}
+
+<span class="k">export const</span> Config: Schema&lt;Config&gt; = Schema.object({
+  greeting: Schema.string().default(<span class="s">'Hello'</span>),
+})
+
+<span class="k">export function</span> apply(ctx: Context, config: Config) {
+  <span class="c">// config.greeting 已被 schema 校验、并填好默认值</span>
+}</code></pre>
+
+<p>然后在 <code>cordis.yml</code> 里传值：</p>
+
+<pre><code>- insert:
+    - id: greet
+      name: <span class="s">'/absolute/path/.../my-plugin.ts'</span>
+      config:
+        greeting: <span class="s">'你好'</span></code></pre>
+
+<p>
+  <strong>配置写错要响亮地失败。</strong> schema 在插件加载时校验，配置不合法就让插件加载失败并给出明确错误——不要静默用默认值兜底，那样你会在几小时后才发现配错了。顺带一提：改 <code>config</code> 会触发<strong>插件热替换</strong>（卸载旧实例、加载新实例），因为注册都是 effect，不会残留旧注册。
+</p>
+
+<h2>从本地脚本到可安装插件</h2>
+
+<p>
+  <code>--patch</code> 适合开发。要让插件进到你日常那个 DSH（比如 <code>npx</code> 装的那个），得把它打包成<strong>组合包（bundle）</strong>。两个概念，别再混：
+</p>
+
+<table>
+  <thead>
+    <tr><th>概念</th><th>回答什么问题</th><th>manifest</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>组合包 bundle</strong></td>
+      <td>「这个包贡献什么？」——一份配置补丁</td>
+      <td><code>dsh.bundle</code></td>
+    </tr>
+    <tr>
+      <td><strong>profile</strong></td>
+      <td>「这套配置由哪些包按什么顺序组成？」</td>
+      <td><code>dsh.profile</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<pre><code><span class="c">// package.json：声明你是一个组合包</span>
+{
+  <span class="s">"name"</span>: <span class="s">"dsh-hello-plugin"</span>,
+  <span class="s">"type"</span>: <span class="s">"module"</span>,
+  <span class="s">"main"</span>: <span class="s">"index.js"</span>,
+  <span class="s">"dsh"</span>: { <span class="s">"bundle"</span>: { <span class="s">"patch"</span>: <span class="s">"./cordis.patch.yml"</span> } }
+}</code></pre>
+
+<pre><code><span class="c"># 安装进 profile，然后先验证再启动</span>
+dsh plugin --profile web add ./hello-plugin
+dsh --profile web --dump-config   <span class="c"># 应能看到 "# == dsh-hello-plugin" 这一层</span></code></pre>
+
+<div class="callout">
+  <p>
+    <strong>从 GitHub 装的坑（务必知道）：</strong> <code>dsh plugin add github:you/hello-plugin</code> 拉的是<strong>源码，不是构建产物</strong>——没有任何环节运行你的 <code>build</code>，TypeScript 包到手时没有 <code>lib/</code>，加载会失败。作者要提供 <code>prepare</code> 脚本，用户要<strong>显式授权构建</strong>（pnpm ≥10 默认拦截），把包键写进该 profile 的 <code>pnpm-workspace.yaml</code> 的 <code>allowBuilds</code>。请把这项授权理解为「允许该包的代码在安装时于你机器上执行，且不在任何沙箱之内」——只对源码可信的包授权，并锁死 commit。更省事的做法是直接分发构建产物：发到 npm，或 <code>pnpm pack</code> 出 tarball 再装。
+  </p>
+</div>
+
+<p>
+  完整的打包步骤、四层加载顺序、以及「patch 会整体替换 config 而不是深度合并」这些细节，我整理在本课的<a href="../reference/tool-plugin-dev-quick-ref.html">Tool 插件开发速查表</a>里。
+</p>
+
+<h2>动动手</h2>
+
+<div class="callout">
+  <p>
+    <strong>本课实操任务：</strong>
+  </p>
+  <ol>
+    <li>克隆 <code>deepseek-harness</code> 仓库，<code>pnpm install</code>，建好 <code>scratch-plugin/</code></li>
+    <li>写上面的 <code>greet</code> 工具，用 <code>--patch</code> 启动，确认终端打印了加载日志</li>
+    <li>输入 <code>Use the greet tool to greet Ada.</code>，拿到 <code>Hello, Ada!</code></li>
+    <li><strong>打开 Trajectory</strong>，找到 <code>greet</code> 的 <code>tool/call</code> 和 <code>tool/result</code>——截图给我</li>
+    <li>把问候语改成可配置的 <code>Config</code>，在 <code>cordis.yml</code> 里改成中文，确认热替换生效</li>
+    <li>故意犯错：把 <code>parameters</code> 里 <code>name</code> 的 <code>type</code> 改成 <code>'number'</code>，看模型传字符串时会发生什么——体会「参数已替你校验」</li>
+  </ol>
+  <p>卡在哪一步、或者 Trajectory 里出现了意外事件，把代码和截图发我，我们一起看。</p>
+</div>
+
+<h2>本节课的小测验</h2>
+
+<div class="quiz" data-quiz="1">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">为什么插件要声明 <code>inject = ['tools']</code>？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">让框架等工具服务就绪再加载</li>
+    <li data-correct="false">让框架在卸载时自动清理工具</li>
+    <li data-correct="false">让模型优先调用本插件的工具</li>
+    <li data-correct="false">让插件可以读取用户的配置文件</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">官方对「可调参数」的设计原则是？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">一律定义成配置字段</li>
+    <li data-correct="false">一律硬编码进代码里</li>
+    <li data-correct="false">一律写在注释说明里</li>
+    <li data-correct="false">一律让模型自行决定</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>下一节课预告：</strong>工具写出来了，最后一课解决「跑得久、跑得起」的问题——<strong>模型切换、成本控制与最佳实践</strong>。我们会讲怎么换供应商、怎么看懂 token 账本、怎么把这一路学到的东西收敛成一套能长期用的个人 Agent 工作流。
+  </p>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/" target="_blank">官方文档 · 第一个 Harness 插件</a> — apply 函数、inject、三种插件形态</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/tool" target="_blank">官方文档 · 开发一个 Tool</a> — defineTool 完整示例 <strong>（本课主源）</strong></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/cookbook/adding-a-tool" target="_blank">官方参考 · 工具编写参考</a> — execute 约定、后台任务、策略与 UI 卡片</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/publish" target="_blank">官方文档 · 打包与安装插件</a> — bundle / profile、层顺序、git 安装的构建授权</p>
+  </section>
+  <section>
+    <h4>本课配套参考</h4>
+    <p><a href="../reference/tool-plugin-dev-quick-ref.html">Tool 插件开发速查表</a> — 骨架 + defineTool 字段 + 打包，打印友好</p>
+    <p><a href="../reference/cordis-glossary.html">Cordis 术语表</a> — Plugin / Service / inject / Effect / Event</p>
+  </section>
+  <section>
+    <h4>上一课</h4>
+    <p><a href="0004-sandbox-and-trajectory.html">← 第 4 课 · 沙箱、审批与 Trajectory</a></p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p><a href="0006-models-cost-and-graduation.html">第 6 课 · 模型、成本与毕业 →</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>插件加载失败、类型报错、模型不调用你的工具——把代码和报错发我，我陪你调到跑通为止。</p>
+  </section>
+</footer>
+
+<script>
+  // 每题独立的反馈文案，按 data-quiz 区分
+  const feedbacks = {
+    '1': {
+      correct: '对。inject 让 Cordis 等 tools 服务就绪后再调用你的 apply，这样 ctx.tools 一定存在。',
+      wrong: '再想想。inject 的作用是「等依赖就绪再加载」；自动清理是 ctx 注册机制本身带来的，和 inject 无关。'
+    },
+    '2': {
+      correct: '对。检验标准是：能不能在 cordis.yml 里改掉它而不用动代码？能，就该是配置字段。',
+      wrong: '再想想。官方约定是「不同部署可能取不同值的参数，都必须定义成配置字段」，否则就不是可配置的。'
+    }
+  };
+
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const fb = feedbacks[quiz.dataset.quiz];
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const isCorrect = opt.dataset.correct === 'true';
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (isCorrect) {
+          opt.classList.add('correct');
+          feedback.textContent = fb.correct;
+        } else {
+          opt.classList.add('wrong');
+          const correct = quiz.querySelector('[data-correct="true"]');
+          if (correct) correct.classList.add('correct');
+          feedback.textContent = fb.wrong;
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

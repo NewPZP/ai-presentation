@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 4 课 · 沙箱、审批与 Trajectory</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 4 课 · DeepSeek Harness 实战</p>
+  <h1 class="lesson-title">沙箱、审批与 Trajectory</h1>
+  <p class="lesson-meta">控制它能做什么 + 追溯它做了什么 · 约 18 分钟</p>
+</header>
+
+<main>
+
+<h2>一个让你睡不着的提问</h2>
+
+<p>
+  到这里，你已经把 DSH 跑起来、装好插件了。Agent 能读文件、改代码、跑命令——它<strong>拿着一个 shell</strong>。
+</p>
+
+<p>
+  那么问题来了：<strong>它到底能碰到什么？出了事你怎么知道它干了什么？</strong>
+</p>
+
+<p>
+  这一课回答这两个问题。你会先看清沙箱的<strong>真实边界</strong>（它比你想的窄），再理解审批为什么不是万能闸门，然后学会用 <strong>Trajectory</strong> 把 Agent 的每一步摊开来看。
+</p>
+
+<h2>沙箱只围住了「写」</h2>
+
+<p>
+  <a href="0002-install-and-modes.html">第 2 课</a>里你记住了三档沙箱。现在补上最关键的一列——<strong>这个旋钮管不到什么</strong>。这是<a href="https://harnessdeepseek.org/features.html#sandbox" target="_blank">官方 Features 页</a>的原表：
+</p>
+
+<table>
+  <thead>
+    <tr><th>SandboxMode</th><th>文件效果</th><th>管不到的地方</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>read-only</code></td>
+      <td>默认兜底档，写入全部拒绝</td>
+      <td rowspan="3" style="vertical-align:middle; background:var(--paper-warm);">网络访问 · 进程可见性 · 凭证读取</td>
+    </tr>
+    <tr>
+      <td><code>workspace-write</code></td>
+      <td>只允许写会话工作区根目录和后端临时目录</td>
+    </tr>
+    <tr>
+      <td><code>danger-full-access</code></td>
+      <td>隔离被绕过，不再有任何隔离承诺</td>
+    </tr>
+  </tbody>
+</table>
+
+<blockquote>
+  <p>
+    官方原话：默认档下写入被限制在工作区和临时目录，而<strong>「读取和网络访问不受限制」</strong>。沙箱覆盖的<b>只有文件</b>。
+  </p>
+</blockquote>
+
+<p>
+  这一条能解释你之前所有的困惑——为什么官方反复强调「凭证不要放进工作区」：因为沙箱拦的是<strong>写</strong>，不是<strong>读</strong>。Agent 完全可以读到你放在家目录的 <code>~/.ssh</code>、<code>~/.aws</code>，也可以发起网络请求把内容送出去。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>心智模型修正：</strong>把沙箱理解成「防止它<em>改坏</em>你的文件」，而不是「防止它<em>碰到</em>你的东西」。这两个是完全不同的安全目标。
+  </p>
+</div>
+
+<h2>审批到底什么时候弹？</h2>
+
+<p>
+  大多数人的直觉是「Agent 每跑一条命令，我都要点一次同意」。<strong>不是这样的。</strong>
+</p>
+
+<p>
+  真实的规则是：<strong>普通命令一开始就不需要批准</strong>；审批只在一条命令<strong>请求了比当前会话更大的权限</strong>时触发。
+</p>
+
+<p>
+  这个设计很合理——否则你每十秒就要点一次弹窗，很快就会变成闭眼点「同意」。但它留下了一个致命缝隙：
+</p>
+
+<blockquote>
+  <p>
+    如果一次调用<strong>不「请求」更大权限，而是直接修改会话设置本身</strong>，审批就不会触发。
+  </p>
+</blockquote>
+
+<p>
+  这不是假设。2026 年 8 月，有人真的利用了这个缝隙。
+</p>
+
+<h2>真实事故：CVE-2026-82533</h2>
+
+<p>
+  一句话概括：<strong>一条 shell 命令，让 Agent 关掉了自己的沙箱，而且没有弹出任何审批。</strong>
+</p>
+
+<p>攻击路径是这样的：</p>
+
+<ol>
+  <li>Agent 读到一段<strong>攻击者提供的文本</strong>（比如一个恶意仓库里的说明文件）</li>
+  <li>文本诱导它调用<strong>本机 DSH 自己的 Web 接口</strong></li>
+  <li>这个接口当时<strong>没有任何认证</strong>——而且 DSH 已经主动把接口地址和当前会话 ID 交给了 Agent 的 shell，它根本不用去找</li>
+  <li>Agent 通过接口把会话切成 <code>danger-full-access</code>：沙箱关闭、审批停用</li>
+</ol>
+
+<p>
+  研究人员做了对照实验：同样的默认设置、同样的命令，走过这条路的那次会话<strong>成功写到了工作区之外</strong>，另一组被正常拦下。该漏洞被评级 <strong>9.4 / 10</strong>（[The Hacker News 报道](https://thehackernews.com/2026/09/deepseek-harness-flaw-let-ai-agents.html)）。
+</p>
+
+<h3>影响范围与修复版本</h3>
+
+<table>
+  <thead>
+    <tr><th>版本</th><th>状态</th><th>时间</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>0.1.1-rc.2</code> 及更早</td><td><strong>受影响</strong></td><td>0.1.1-rc.2 于 8 月 21 日发布</td></tr>
+    <tr><td><code>0.1.2-alpha.1</code></td><td>已修复，<b>但只发布在 GitHub</b></td><td>8 月 27 日</td></tr>
+    <tr><td><code>0.1.2-alpha.2</code></td><td>首个带修复的 npm 版本</td><td>8 月 30 日</td></tr>
+    <tr><td><code>0.1.2-rc.1</code></td><td>当前 npm 版，<strong>已含修复</strong></td><td>9 月 3 日</td></tr>
+  </tbody>
+</table>
+
+<p>
+  修复方式：本机 Web 接口启动时打印一个<strong>一次性 token</strong>，浏览器用它换一个签名 cookie，之后每次调用接口都必须带这个 cookie——接口终于有了身份校验。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>但修复的只是接口认证，不是沙箱。</strong> 在 <code>0.1.2-rc.1</code> 里，「读取和网络访问不受限制」这条依然成立，Agent 的 shell 依然拿得到接口地址。别把这次修复理解成「沙箱变安全了」。
+  </p>
+</div>
+
+<h2>三条不能忘的教训</h2>
+
+<ol>
+  <li>
+    <strong>沙箱和审批是「降险」，不是「安全边界」。</strong> 官方自己的安全声明写着：软件<strong>未经安全审计</strong>，沙箱、审批和权限预设<strong>「不保证隔离」</strong>。
+  </li>
+  <li>
+    <strong>在可丢弃的环境里跑。</strong> 用一次性目录、一次性容器，别把真实凭证、真实项目、真实密钥放进它的活动范围。
+  </li>
+  <li>
+    <strong>确认你的版本。</strong> 你的 Web UI 跑在 <code>0.1.2-rc.1</code>（含修复）。如果你用了第三方桌面版，<strong>要查它内置的 harness 是哪个版本</strong>——那是封装作者的锁版本，不是官方的。
+  </li>
+</ol>
+
+<h2>Trajectory：把每一步摊开来看</h2>
+
+<p>
+  既然边界靠不住，那「事前拦住」就不够了，你还需要<strong>事后看清</strong>。这就是 Trajectory。
+</p>
+
+<p>
+  DSH 把<strong>模型看到的一切</strong>都记进一份<strong>仅追加（append-only）</strong>的会话日志：系统提示、推理过程、每一次工具调用与结果、子代理调度、每一次上下文注入。Trajectory 就是按来源检视这份记录的界面——<strong>resume、fork、search、replay 全都基于同一条流</strong>。
+</p>
+
+<p>
+  <code>0.1.2-rc.1</code> 还给 Trajectory 补了两个实用信息：<strong>用户/助手/工具结果里的图片</strong>，以及<strong>每次回答结束后的 token 用量与耗时</strong>。
+</p>
+
+<p>
+  日志在磁盘上的形态是 <code>session.jsonl.zstd</code>——<strong>zstd 压缩的 JSONL</strong>，一行一个事件。事件类型（<code>turn/start</code>、<code>step/end</code>、<code>tool/call</code>、<code>tool/result</code> 等）我在<a href="../reference/cordis-glossary.html">Cordis 术语表</a>里已经列全了。
+</p>
+
+<h3>轨迹的三个用法</h3>
+
+<table>
+  <thead>
+    <tr><th>用途</th><th>看什么</th><th>解决什么问题</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>复盘调试</strong></td>
+      <td>工具报错在时间线上的确切位置</td>
+      <td>「它为什么突然改错文件了？」</td>
+    </tr>
+    <tr>
+      <td><strong>成本归因</strong></td>
+      <td>每一轮的 token 用量与耗时</td>
+      <td>「这一下午的钱烧在哪一步？」</td>
+    </tr>
+    <tr>
+      <td><strong>交付审计</strong></td>
+      <td>完整回合时间线 + 元数据</td>
+      <td>「把过程发给别人复核」</td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>怎么读一次轨迹</h3>
+
+<p>
+  别被事件流吓到。抓住这个层级就行：<strong>一个 turn（回合）里包含若干 step（步），一个 step = 一次模型调用 + 它发起的工具执行</strong>。
+</p>
+
+<pre><code>turn/start
+ ├─ step/start
+ │   ├─ assistant/message      <span class="c"># 模型决定要干什么</span>
+ │   ├─ tool/call              <span class="c"># 调了哪个工具、参数是什么</span>
+ │   └─ tool/result            <span class="c"># 结果，或者 error</span>
+ └─ turn/end                   <span class="c"># reason: completed / blocked / error / ...</span></code></pre>
+
+<p>
+  排查时优先看两处：<strong>带 error 的 <code>tool/result</code></strong>（哪一步失败的），以及 <strong><code>turn/end</code> 的 reason</strong>（这一回合是正常完成，还是被拦、报错、超 token）。
+</p>
+
+<h3>看轨迹的两个工具</h3>
+
+<ul>
+  <li><strong>内置 Trajectory 视图（首选）</strong>：Web UI 里聊天区旁边的 <code>Chat / Trajectory</code> 两个 tab，直接点开就能看。</li>
+  <li><strong>导出成可分享的 HTML</strong>：<a href="https://github.com/ciceroyang/dsh-trajectory" target="_blank">dsh-trajectory</a> 把会话日志渲染成一份自包含的 HTML（内联样式、零依赖），附带 SHA-256，适合发给别人复核。</li>
+</ul>
+
+<pre><code><span class="c"># 把一份会话日志导出成可分享的 HTML 报告</span>
+npx --yes github:ciceroyang/dsh-trajectory#v0.4.2 ./session.jsonl.zstd --out report.html</code></pre>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  进阶：<a href="https://github.com/zoahdev/dsh-replay" target="_blank">dsh-replay</a> 是时间旅行调试器，可以对一份 <code>session.jsonl.zstd</code> 做 replay / visualize / diff——等你要精修 Agent 行为时再回头看它。
+</p>
+
+<h2>动动手</h2>
+
+<div class="callout">
+  <p>
+    <strong>本课实操任务：</strong>
+  </p>
+  <ol>
+    <li>在工作区里让 Agent 做一个<strong>多步任务</strong>：读一个文件 → 改一处 → 跑一条命令</li>
+    <li>打开 <code>Trajectory</code> tab，在时间线上<strong>找到那次 shell 调用</strong>，看它的参数和结果</li>
+    <li>看这一轮结束后的 <strong>token 用量与耗时</strong>——这就是「成本归因」的入口</li>
+    <li>故意制造一次失败：让它跑一条<strong>会报错</strong>的命令，观察 <code>tool/result</code> 的 error 和 <code>turn/end</code> 的 reason 怎么记录</li>
+    <li>把这次轨迹导出成 HTML，或者截图关键那几步，贴给我</li>
+  </ol>
+  <p>看不懂某个事件、或者轨迹里出现了你没预期的调用，直接发我——这正是最该一起看的东西。</p>
+</div>
+
+<h2>本节课的小测验</h2>
+
+<div class="quiz" data-quiz="1">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">关于默认的 <code>workspace-write</code> 沙箱，下列说法正确的是？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">只限制写入不限制读取与联网</li>
+    <li data-correct="false">限制写入同时也限制读取联网</li>
+    <li data-correct="false">只限制读取不限制写入与联网</li>
+    <li data-correct="false">限制联网但不限制读取与写入</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz" data-quiz="2">
+  <p class="quiz-title">检验一下理解</p>
+  <p class="quiz-question">审批提示（approval）通常在什么时候才会出现？</p>
+  <ul class="quiz-options">
+    <li data-correct="true">命令请求超出会话现有权限时</li>
+    <li data-correct="false">每条命令执行之前都会弹一次</li>
+    <li data-correct="false">模型每次调用工具都会弹一次</li>
+    <li data-correct="false">会话刚启动的时候统一弹一次</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>下一节课预告：</strong>控制住了、也看得清了，接下来终于动手<strong>造东西</strong>——写你自己的第一个 Tool 插件，让模型调用一个你定义的、它原本不会的能力。我们会从 <code>apply(ctx)</code> 讲到 <code>ctx.tools.register</code>，再用 Trajectory 验证它真的被调用了。
+  </p>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://harnessdeepseek.org/features.html#sandbox" target="_blank">官方 Features 页 · Sandbox &amp; Trajectory</a> — 沙箱表格与「管不到的地方」的权威说明</p>
+    <p><a href="https://thehackernews.com/2026/09/deepseek-harness-flaw-let-ai-agents.html" target="_blank">The Hacker News: DSH 沙箱逃逸漏洞（CVE-2026-82533）</a> — 审批缝隙与修复版本</p>
+    <p><a href="https://github.com/ciceroyang/dsh-trajectory" target="_blank">dsh-trajectory</a> — 会话日志导出为可分享 HTML</p>
+  </section>
+  <section>
+    <h4>本课配套参考</h4>
+    <p><a href="../reference/sandbox-trajectory-quick-ref.html">沙箱与 Trajectory 速查表</a> — 安全清单 + 事件读法，打印友好</p>
+    <p><a href="../reference/cordis-glossary.html">Cordis 术语表</a> — 会话事件类型全表</p>
+  </section>
+  <section>
+    <h4>上一课</h4>
+    <p><a href="0003-essential-plugins.html">← 第 3 课 · 装上你的第一批插件</a></p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p><a href="0005-first-tool-plugin.html">第 5 课 · 写你的第一个 Tool 插件 →</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>安全边界、版本确认、轨迹读法——任何一处不确定，都直接问我。这一课的内容宁可多问一遍。</p>
+  </section>
+</footer>
+
+<script>
+  // 每题独立的反馈文案，按 data-quiz 区分
+  const feedbacks = {
+    '1': {
+      correct: '对。沙箱覆盖的只有文件写入；读取和网络访问始终不受限制，这也是「凭证不要放工作区」的原因。',
+      wrong: '再想想。官方明确写着默认档下「读取和网络访问不受限制」——沙箱管的只有写入。'
+    },
+    '2': {
+      correct: '对。普通命令一开始就不需要批准；只有请求了比当前会话更大的权限时，审批才会触发。',
+      wrong: '再想想。审批不是每条命令都弹，只在命令请求超出会话现有权限时出现——这正是 CVE-2026-82533 钻的缝。'
+    }
+  };
+
+  document.querySelectorAll('.quiz').forEach(quiz => {
+    const options = quiz.querySelectorAll('.quiz-options li');
+    const feedback = quiz.querySelector('.quiz-feedback');
+    const fb = feedbacks[quiz.dataset.quiz];
+    options.forEach(opt => {
+      opt.addEventListener('click', () => {
+        const isCorrect = opt.dataset.correct === 'true';
+        options.forEach(o => o.classList.remove('correct', 'wrong'));
+        if (isCorrect) {
+          opt.classList.add('correct');
+          feedback.textContent = fb.correct;
+        } else {
+          opt.classList.add('wrong');
+          const correct = quiz.querySelector('[data-correct="true"]');
+          if (correct) correct.classList.add('correct');
+          feedback.textContent = fb.wrong;
+        }
+        feedback.classList.add('shown');
+      });
+    });
+  });
+</script>
+
+</body>
+</html>

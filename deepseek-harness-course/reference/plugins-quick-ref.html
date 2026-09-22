@@ -76,9 +76,20 @@
     </tr>
     <tr>
       <td>6</td>
-      <td><strong>deepseek-harness-desktop</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">桌面客户端</span></td>
-      <td>官方 Web UI 的桌面封装。免配置 Node.js，系统托盘常驻，点开就用。</td>
-      <td>从仓库下载安装包</td>
+      <td><strong>dsh-desktop</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">桌面客户端</span></td>
+      <td>
+        把整个 Web UI 装进原生外壳，双击即用、免管 Node。与界面插件<strong>不冲突</strong>（壳内跑的就是那个 Web UI）。<br>
+        <strong>社区版很多，先按「平台 + 许可」筛：</strong><br>
+        · <strong>anywhere-labs/dsh-desktop</strong>（DSH Desktop）— macOS Universal + Windows x64，<strong>纯 MIT 可商用</strong>，采用最广（约 2.85 万 ★），Electron（macOS 包约 304MB）。<br>
+        · <strong>dsh-tauri</strong> — macOS / Windows / Linux，Tauri 2 极轻（约 10MB），但许可<strong>附加非商用条款</strong>。<br>
+        · Links2008、ningbainb 等为 Windows 专有。<br>
+        <strong>官方桌面端即将发布</strong>：macOS（Apple Silicon + Intel）、Windows x64，走 <code>dsh-app://</code> 协议不暴露本地端口，与内核整体打包——最稳妥。
+      </td>
+      <td>
+        <strong>macOS 首选：</strong><br>从 <a href="https://www.dshdesktop.cn/">dshdesktop.cn</a> 或 Releases 下 Universal DMG<br>
+        <span style="color:var(--ink-faint);font-size:0.78rem;">轻量替代：<code>brew install dsh-tauri/desktop/deepseek-harness</code></span><br>
+        <span style="color:var(--ink-faint);font-size:0.78rem;">官方版待 <code>download.deepseek.com</code></span>
+      </td>
     </tr>
     <tr>
       <td>7</td>

@@ -150,6 +150,89 @@ dsh plugin --profile web add dsh-better-sidebar@latest</code></pre>
 <pre><code><span class="c"># 手动放行构建脚本后重装</span>
 cd ~/.dsh/profiles/web && pnpm approve-builds --all</code></pre>
 
+<h2>另一条路：dsh-desktop（桌面客户端）</h2>
+
+<p>
+  上面两个是<strong>界面插件</strong>——装在 Web UI 里，你还是得自己开浏览器、开着终端。桌面客户端是<strong>另一层</strong>的东西：把整个 Web UI 装进一个原生外壳，双击即用、不用自己管 Node。
+</p>
+
+<blockquote>
+  <p>
+    <strong>两者不冲突。</strong> 桌面壳内部跑的就是那个 Web UI，界面插件照常在它里面加载。DSH Desktop 甚至内置了插件市场，管理的就是本课这批插件。
+  </p>
+</blockquote>
+
+<h3>社区版本很多，先按平台和许可筛</h3>
+
+<p>
+  官方初期没出桌面端，社区就冒出一堆第三方封装。看着都差不多，但<strong>平台支持</strong>和<strong>许可证</strong>差别很大——你在 macOS 上、又打算做产品，这两条就能筛掉大半：
+</p>
+
+<table>
+  <thead>
+    <tr><th>版本</th><th>平台</th><th>关键事实</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>官方桌面端</strong></td>
+      <td>macOS（Apple Silicon + Intel）· Windows x64</td>
+      <td><strong>即将发布</strong>，暂无成品下载；<code>apps/desktop</code> 已在官方主分支</td>
+    </tr>
+    <tr>
+      <td><strong>anywhere-labs/dsh-desktop</strong><br><span style="color:var(--ink-faint);font-size:0.8rem;">DSH Desktop</span></td>
+      <td><strong>macOS Universal · Windows x64</strong></td>
+      <td>社区采用最广（约 <strong>2.85 万 ★</strong> / 1350 fork）；<strong>纯 MIT，可商用</strong>；Electron，macOS 包约 304MB</td>
+    </tr>
+    <tr>
+      <td><strong>dsh-tauri</strong></td>
+      <td>Windows / macOS / Linux</td>
+      <td>Tauri 2，macOS 包仅约 10MB、内存占用低；但许可是 MIT <strong>附加非商用条款</strong></td>
+    </tr>
+    <tr>
+      <td>Links2008 / ningbainb 等</td>
+      <td>Windows only</td>
+      <td>功能不少（内置插件商店、SSH、主题），但 macOS 用不了</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>star 数该怎么读？</strong> 它衡量的是<strong>采用度</strong>，不是质量，更不是「适合你」。这次真正决定选谁的是另外四项：<strong>平台</strong>（macOS 能不能装）、<strong>许可证</strong>（能不能商用）、<strong>维护时效</strong>（最近还有没有提交）、<strong>它固定的上游内核版本</strong>（安全）。star 数只帮你判断「踩坑的人多不多、答案好不好找」——在这一点上它确实有用。
+  </p>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>我的推荐（针对你的 macOS）：</strong>
+  </p>
+  <ul>
+    <li>
+      <strong>首选</strong> → <a href="https://github.com/anywhere-labs/dsh-desktop" target="_blank">anywhere-labs/dsh-desktop</a>（DSH Desktop）。macOS Universal 安装包（Intel / Apple Silicon 都覆盖），<strong>纯 MIT 许可</strong>——这一条对你「做产品」的目标是关键，因为好几个社区桌面版的许可里带<strong>非商用条款</strong>，不能直接进要卖的东西。它还固定上游 <code>v0.1.5-rc.2</code>（远在 CVE 修复线之上），并<strong>复用你已有的 <code>~/.dsh</code></strong>，会话和设置是通的。
+    </li>
+    <li>
+      <strong>想要轻量</strong> → <a href="https://github.com/dsh-tauri/deepseek-harness-desktop" target="_blank">dsh-tauri</a>。Tauri 2 外壳，macOS 包只约 10MB（对比上者的 304MB），内存占用明显更低。<strong>代价是许可带非商用条款</strong>——自己玩没问题，商用要谨慎。
+    </li>
+    <li>
+      <strong>长期正解</strong> → <strong>等官方</strong>。官方桌面端支持 mac 的 Apple Silicon 和 Intel，还有两个架构上的实在优势：<strong>不走本地端口</strong>，改用自定义 <code>dsh-app://</code> 协议传数据（比第三方暴露 <code>127.0.0.1:3080</code> 更安全）；<strong>与运行时、后端整体打包</strong>，版本维护一致，不容易出「外壳和内核版本对不上」的 bug。发布后应该在 <code>download.deepseek.com</code>。
+    </li>
+  </ul>
+</div>
+
+<div class="callout">
+  <p>
+    <strong>装任何第三方桌面壳之前，务必确认两件事：</strong>
+  </p>
+  <ol>
+    <li>
+      <strong>它内置的 harness 是哪个版本。</strong> 桌面壳自带一份内核，版本由<strong>封装作者</strong>决定，不等于官方最新。这正是<a href="0004-sandbox-and-trajectory.html">第 4 课</a> CVE-2026-82533 的教训——装之前查版本，确保在 <code>0.1.2-rc.1</code> 之上。查法：翻它的 <strong>Release Notes</strong>，通常写明了固定的上游版本（<em>已核实：DSH Desktop v2.0.13 固定 <code>v0.1.5-rc.2</code>；dsh-tauri 要求 <code>0.1.5-rc.1+</code>，都过关</em>）。
+    </li>
+    <li>
+      <strong>它的许可证里有没有额外条款。</strong> 别只看 GitHub 上那个 "MIT" 徽章——dsh-tauri 的仓库同为 MIT，但 README 里另有<strong>非商用条款</strong>。你的目标是做产品，这一条决定你能不能用它。
+    </li>
+  </ol>
+</div>
+
 <h2>怎么确认插件「真的生效」？</h2>
 
 <p>
@@ -263,7 +346,7 @@ cd ~/.dsh/profiles/web && pnpm approve-builds --all</code></pre>
   </section>
   <section>
     <h4>下一课</h4>
-    <p>第 4 课 · 沙箱权限与 Trajectory 可追溯</p>
+    <p><a href="0004-sandbox-and-trajectory.html">第 4 课 · 沙箱、审批与 Trajectory →</a></p>
   </section>
   <section>
     <h4>有疑问？</h4>

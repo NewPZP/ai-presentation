@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · Tool 插件开发速查表</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">Tool 插件开发速查表</h1>
+  <p class="lesson-meta">骨架 + defineTool + 打包安装 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  对应 DSH <code>0.1.2-rc.1</code>。以<a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/tool" target="_blank">官方「开发一个 Tool」</a>与<a href="https://deepseek-harness.github.io/deepseek-harness/reference/cookbook/adding-a-tool" target="_blank">工具编写参考</a>为准。
+</p>
+
+<h2>一句话</h2>
+
+<blockquote>
+  <p>
+    插件 = 导出 <code>name</code> + <code>apply(ctx)</code> 的模块。工具 = 在 <code>apply</code> 里 <code>ctx.tools.register(defineTool({...}))</code>。
+  </p>
+</blockquote>
+
+<h2>最小插件骨架</h2>
+
+<pre><code><span class="k">import type</span> { Context } <span class="k">from</span> <span class="s">'@deepseek-ai/cordis'</span>
+
+<span class="k">export const</span> name = <span class="s">'my-plugin'</span>
+<span class="k">export const</span> inject = [<span class="s">'tools'</span>]        <span class="c">// 等依赖就绪再 apply</span>
+
+<span class="k">export function</span> apply(ctx: Context) {
+  <span class="c">// 注册能力</span>
+}</code></pre>
+
+<h2>工具的三种形态</h2>
+
+<table>
+  <thead>
+    <tr><th>形态</th><th>写法</th><th>什么时候用</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>函数</td>
+      <td><code>export function apply(ctx)</code></td>
+      <td>绝大多数工具插件，<strong>够用</strong></td>
+    </tr>
+    <tr>
+      <td>对象</td>
+      <td><code>export default { name, inject, apply }</code></td>
+      <td>需要更整齐的声明</td>
+    </tr>
+    <tr>
+      <td>Service 类</td>
+      <td><code>class X extends Service</code></td>
+      <td>要给别人提供服务时</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>defineTool 字段表</h2>
+
+<pre><code>ctx.tools.register(defineTool({
+  name: <span class="s">'greet'</span>,
+  description: <span class="s">'Greet someone by name.'</span>,     <span class="c">// 模型据此决定调不调</span>
+  parameters: {
+    name: { type: <span class="s">'string'</span>, required: <span class="k">true</span>, description: <span class="s">'要问候的名字'</span> },
+    limit: { type: <span class="s">'number'</span> },                  <span class="c">// 默认可选</span>
+  },
+  output: {
+    schema: { type: <span class="s">'string'</span> },                  <span class="c">// 规范值的类型</span>
+    render: (_args, value) =&gt; [{ type: <span class="s">'text'</span>, text: value }],
+  },
+  <span class="k">async</span> execute(args, exec) {
+    <span class="k">return</span> <span class="s">`Hello, ${args.name}!`</span>
+  },
+}))</code></pre>
+
+<table>
+  <thead>
+    <tr><th>字段</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>name</code></td><td>工具名，模型调用时用它</td></tr>
+    <tr><td><code>description</code></td><td><strong>面向模型的提示词</strong>——写不清，模型就不会用</td></tr>
+    <tr><td><code>parameters</code></td><td>参数 schema；<code>defineTool</code> 据此<strong>校验</strong>并推导 <code>args</code> 类型</td></tr>
+    <tr><td><code>output.schema</code></td><td>规范值类型，根可以是对象 / 数组 / 标量 / null</td></tr>
+    <tr><td><code>output.render</code></td><td>把规范值转成模型可见内容</td></tr>
+    <tr><td><code>execute(args, exec)</code></td><td>参数已校验；<code>exec.signal</code> 用于取消；<code>exec.agent</code> 可注入上下文</td></tr>
+  </tbody>
+</table>
+
+<h2>execute 的约定</h2>
+
+<table>
+  <thead>
+    <tr><th>规则</th><th>要点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>参数已校验</strong></td>
+      <td>类型 / 必填 / 字面量 / 联合 / 嵌套都会校验；但<strong>非空、正数、跨字段</strong>等约束要自己查</td>
+    </tr>
+    <tr>
+      <td><strong>定义只读</strong></td>
+      <td>注册后不要改 schema 或换回调；要热替换就 dispose 该 effect 再注册新的</td>
+    </tr>
+    <tr>
+      <td><strong>返回规范值</strong></td>
+      <td>只返回 <code>output.schema</code> 声明的值，不要返回内容块；渲染交给 <code>render</code></td>
+    </tr>
+    <tr>
+      <td><strong>抛异常 = isError</strong></td>
+      <td>基础设施故障抛异常；<strong>合法的「不理想结果」写进规范值</strong>（如非零退出码）</td>
+    </tr>
+    <tr>
+      <td><strong>遵守 signal</strong></td>
+      <td><code>exec.signal</code> 触发即取消进行中的工作</td>
+    </tr>
+    <tr>
+      <td><strong>后台长任务</strong></td>
+      <td>用 <code>ctx.jobs.start({ kind, label, owner: exec.agent, run })</code>；发布后用任务自有取消信号而非 <code>exec.signal</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>配置（Config）</h2>
+
+<pre><code><span class="k">import</span> Schema <span class="k">from</span> <span class="s">'@deepseek-ai/schemastery'</span>
+
+<span class="k">export interface</span> Config {
+  greeting: <span class="k">string</span>
+  maxRetries: <span class="k">number</span>
+}
+
+<span class="k">export const</span> Config: Schema&lt;Config&gt; = Schema.object({
+  greeting: Schema.string().default(<span class="s">'Hello'</span>),
+  maxRetries: Schema.number().default(3),
+})
+
+<span class="k">export function</span> apply(ctx: Context, config: Config) { <span class="c">/* ... */</span> }</code></pre>
+
+<ul>
+  <li><strong>无硬编码可调参数。</strong> 检验：能否在 <code>cordis.yml</code> 改掉它而不动代码？</li>
+  <li><strong>配置错误要响亮。</strong> schema 在加载时校验，不合法就让插件加载失败，别静默兜底。</li>
+  <li>改 <code>config</code> 会触发<strong>插件热替换</strong>（effect 自动清理，无旧注册残留）。</li>
+</ul>
+
+<h2>加载：开发用 patch overlay</h2>
+
+<pre><code><span class="c"># scratch-plugin/cordis.yml</span>
+- insert:
+    - id: greet
+      name: <span class="s">'/absolute/path/to/scratch-plugin/src/my-plugin.ts'</span>
+      config:
+        greeting: <span class="s">'你好'</span></code></pre>
+
+<pre><code>pnpm dsh web --patch ./scratch-plugin/cordis.yml</code></pre>
+
+<p>
+  <code>name</code> <strong>必须是绝对路径</strong>：patch 只贡献配置，不改变 loader 的模块解析基准目录。
+</p>
+
+<h2>打包：bundle vs profile</h2>
+
+<table>
+  <thead>
+    <tr><th></th><th>组合包 bundle</th><th>profile</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>回答</td><td>这个包贡献什么？</td><td>这套配置由哪些包组成？</td></tr>
+    <tr><td>manifest</td><td><code>dsh.bundle.patch</code></td><td><code>dsh.profile.bundles</code></td></tr>
+    <tr><td>位置</td><td>npm 包</td><td><code>$DSH_HOME/profiles/&lt;name&gt;</code></td></tr>
+    <tr><td>谁写</td><td><strong>你（分发的东西）</strong></td><td>用户（启动的东西）</td></tr>
+  </tbody>
+</table>
+
+<pre><code><span class="c">// bundle 的 package.json</span>
+{
+  <span class="s">"name"</span>: <span class="s">"dsh-hello-plugin"</span>,
+  <span class="s">"type"</span>: <span class="s">"module"</span>,
+  <span class="s">"main"</span>: <span class="s">"index.js"</span>,
+  <span class="s">"files"</span>: [<span class="s">"index.js"</span>, <span class="s">"cordis.patch.yml"</span>],
+  <span class="s">"dsh"</span>: { <span class="s">"bundle"</span>: { <span class="s">"patch"</span>: <span class="s">"./cordis.patch.yml"</span> } }
+}</code></pre>
+
+<pre><code><span class="c"># bundle 的 cordis.patch.yml 按包名引用自己</span>
+- insert:
+    - id: hello
+      name: dsh-hello-plugin</code></pre>
+
+<pre><code>dsh plugin --profile web add ./hello-plugin
+dsh --profile web --dump-config    <span class="c"># 应看到 "# == dsh-hello-plugin" 层</span>
+dsh plugin --profile web remove dsh-hello-plugin</code></pre>
+
+<h2>四层加载顺序（后者胜）</h2>
+
+<pre><code>1. dsh.profile.bundles 列出的各 bundle patch（按列表顺序，base 在前）
+2. profile 自己的 cordis.patch.yml
+3. $DSH_HOME/cordis.patch.yml（机器本地共享偏好）
+4. 每个 --patch &lt;path&gt; overlay（按 argv 顺序）</code></pre>
+
+<p>
+  <strong>注意：</strong>patch 会<strong>整体替换</strong>目标行的 <code>config</code>，<strong>不是</strong>深度合并。覆盖某一行的 `id` 时，必须重述该行需要的<strong>每一个</strong>键。
+</p>
+
+<h2>从 git 安装的构建授权（安全相关）</h2>
+
+<ol>
+  <li>git 安装拉的是<strong>源码不是产物</strong>，没有环节跑 <code>build</code> → TypeScript 包没有 <code>lib/</code>，加载失败。</li>
+  <li>作者须提供<strong>自包含</strong>的 <code>prepare</code> 脚本（pnpm 在 git 安装后运行）。</li>
+  <li>用户须<strong>显式授权构建</strong>（pnpm ≥10 默认拦截），把 pnpm 打印的确切包键写进该 profile 的 <code>pnpm-workspace.yaml</code>：</li>
+</ol>
+
+<pre><code>allowBuilds:
+  dsh-hello-plugin: true</code></pre>
+
+<blockquote>
+  <p>
+    把这项授权理解为<strong>允许该包的代码在安装时于你机器上执行，且不在任何沙箱之内</strong>。只对源码可信的包授权，并锁死 commit（<code>github:you/hello-plugin#&lt;sha&gt;</code>）。想省掉这一步就分发<strong>构建产物</strong>：发 npm，或 <code>pnpm pack</code> 出 tarball 再装。
+  </p>
+</blockquote>
+
+<h2>验证链（三层证据）</h2>
+
+<table>
+  <thead>
+    <tr><th>证据</th><th>怎么看</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>1 · 加载了</td><td>终端出现 <code>apply</code> 里的 <code>console.log</code></td></tr>
+    <tr><td>2 · 进表了</td><td>工具 schema 流入系统提示词组装，模型「看得见」</td></tr>
+    <tr><td>3 · 真调用了</td><td>Trajectory 里出现该工具的 <code>tool/call</code> + <code>tool/result</code></td></tr>
+  </tbody>
+</table>
+
+<h2>排错速查</h2>
+
+<table>
+  <thead>
+    <tr><th>症状</th><th>多半是</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>插件没加载</td><td><code>cordis.yml</code> 里 <code>name</code> 用了相对路径</td></tr>
+    <tr><td><code>ctx.tools</code> 是 undefined</td><td>忘了 <code>export const inject = ['tools']</code></td></tr>
+    <tr><td>模型不调用你的工具</td><td><code>description</code> 写得含糊，或参数 schema 描述不清</td></tr>
+    <tr><td>加载即失败且报配置错</td><td>schema 校验没过——这是<strong>预期行为</strong>，按报错改配置</td></tr>
+    <tr><td>git 安装报构建被拦</td><td>未在 <code>pnpm-workspace.yaml</code> 授权 <code>allowBuilds</code></td></tr>
+    <tr><td>覆盖某行后配置丢了</td><td>patch 整体替换 config，需重述所有键</td></tr>
+  </tbody>
+</table>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/" target="_blank">官方 · 第一个 Harness 插件</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/tool" target="_blank">官方 · 开发一个 Tool</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/config" target="_blank">官方 · 插件配置</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/develop/basic/publish" target="_blank">官方 · 打包与安装插件</a></p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/cookbook/adding-a-tool" target="_blank">官方参考 · 工具编写参考</a></p>
+  </section>
+  <section>
+    <h4>相关课程</h4>
+    <p><a href="../lessons/0003-essential-plugins.html">第 3 课 · 装上你的第一批插件</a>（三层验收）</p>
+    <p><a href="../lessons/0004-sandbox-and-trajectory.html">第 4 课 · 沙箱、审批与 Trajectory</a>（轨迹验证）</p>
+    <p><a href="../lessons/0005-first-tool-plugin.html">第 5 课 · 写你的第一个 Tool 插件</a></p>
+  </section>
+</footer>
+
+</body>
+</html>
