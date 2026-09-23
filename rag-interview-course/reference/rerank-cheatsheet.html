@@ -1,0 +1,259 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · 重排与两段式速查</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">重排与两段式速查</h1>
+  <p class="lesson-meta">排序差距诊断 · 三步测法 · 选型与排错 · 成本表 · 打印友好</p>
+</header>
+
+<main>
+
+<blockquote>
+  <p>
+    <strong>本页第一判据：</strong>先量「把候选集当作完美排序能得多少分」，再和你当前得分比。
+    <strong>差距大 → 值得动排序；差距小或为 0 → 该去改候选本身。</strong>
+    在你伸手去拿重排模型之前，先做这一步。
+  </p>
+</blockquote>
+
+<h2>排序差距诊断（这是上不上重排的判据）</h2>
+
+<pre><code><span class="k">def</span> ranking_gap(ranked_ids, relevance, k=10):
+    <span class="s">"""返回 (当前 nDCG@k, 最优可能, 差距)。差距 = 更好的排序能捞回的全部。"""</span>
+    now = ndcg_at_k(ranked_ids, relevance, k)
+    perfect = sorted(set(ranked_ids), key=<span class="k">lambda</span> d: -relevance.get(d, 0))
+    best = ndcg_at_k(perfect, relevance, k)
+    <span class="k">return</span> now, best, best - now</code></pre>
+
+<p>
+  <strong>手算过的例子</strong>：200 个候选，三篇相关文档被排在第 4、30、180 名 →
+  <code>当前 0.2021 / 最优 1.0000 / 差距 0.7979</code>。
+  （完整实现见<a href="../lessons/0004-reranking-and-two-stage.html">第 4 课</a>的钻取练习。）
+</p>
+
+<table>
+  <thead>
+    <tr><th><code>k</code></th><th>当前</th><th>最优可能</th><th>差距</th><th>前 k 名里的相关文档</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>5</td><td>0.2021</td><td>1.0000</td><td>0.7979</td><td>1</td></tr>
+    <tr><td>10</td><td>0.2021</td><td>1.0000</td><td>0.7979</td><td>1</td></tr>
+    <tr><td>20</td><td>0.2021</td><td>1.0000</td><td>0.7979</td><td>1</td></tr>
+    <tr><td>30</td><td>0.2968</td><td>1.0000</td><td>0.7032</td><td>2</td></tr>
+    <tr><td>200</td><td>0.3594</td><td>1.0000</td><td>0.6406</td><td>3</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong><code>k</code> 是台阶状的</strong>：只有当 <code>k</code> 跨过某篇相关文档的位置，它才开始计分。
+  <code>k</code> 越大指标越宽容、差距越小——<strong>所以横向比较必须固定 <code>k</code>，且取小值（10）</strong>，
+  因为它代表「模型和用户实际会用到多少条」。
+</p>
+
+<h2>候选深度的形状（判断该改排序还是该改检索）</h2>
+
+<p>把深度从 10 扫到 500，画两条线。Qdrant 在五个数据集上测到的形状：</p>
+
+<table>
+  <thead>
+    <tr><th>数据集</th><th>最优可能的变化</th><th>当前得分的变化</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>SciFact</td><td>+0.103</td><td>+0.008</td></tr>
+    <tr><td>ArguAna</td><td>+0.121</td><td>+0.002</td></tr>
+    <tr><td>WANDS</td><td>+0.124</td><td>+0.007</td></tr>
+    <tr><td>CodeSearchNet</td><td>+0.149</td><td>+0.010</td></tr>
+    <tr><td>DBPedia-entity</td><td>+0.282</td><td>+0.003</td></tr>
+  </tbody>
+</table>
+
+<p><strong>最优可能随深度一路上升，当前得分几乎不动</strong>——缺口变宽，说明瓶颈在排序。</p>
+
+<h2>三种编码架构</h2>
+
+<table>
+  <thead>
+    <tr><th></th><th>双塔（bi-encoder）</th><th>后期交互（ColBERT）</th><th>交叉编码器</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>交互位置</strong></td><td>只在最后比一次向量距离</td><td>MaxSim 逐 token 对匹配</td><td>每层注意力都做逐词交叉</td></tr>
+    <tr><td><strong>文档侧可否预算</strong></td><td>可以（一个向量）</td><td>可以（每 token 一个向量）</td><td><strong>不行</strong>（分数依赖整对）</td></tr>
+    <tr><td><strong>在线代价</strong></td><td>一次编码 + 一次搜索</td><td>仅查询过模型</td><td><strong>每个候选一次前向</strong></td></tr>
+    <tr><td><strong>存储</strong></td><td>一个向量/块</td><td>涨到每 token 一个向量</td><td>无索引存储</td></tr>
+    <tr><td><strong>定位</strong></td><td>第一级粗召回</td><td>交叉编码器太慢时的替代</td><td>第二级精排</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>为什么交叉编码器不能做第一级：</strong>每个候选都要过一次前向，一百万篇文档就是一百万次。
+  这不是设计选择，是成本结构的必然结果。
+</p>
+
+<h2>三步测法（可直接当面试答案）</h2>
+
+<ol>
+  <li>
+    <strong>建基线</strong>：用<strong>调好的融合</strong>，不是默认配置。
+    并先确认相关文档确实进了候选列表——<strong>重排只能重排它收到的东西</strong>，缺失的文档是候选深度或检索的问题。
+  </li>
+  <li>
+    <strong>只用 10 个候选测，用你真正要上线的那个模型</strong>（模型选择比其他任何设置影响都大）。
+    读 model card 确认语言、领域、上下文窗口。在留出的标注查询上和基线比。
+    CPU 上这一步约 47–156 ms/查询，代价很低，所以先做它。
+  </li>
+  <li>
+    <strong>赢了才加候选数</strong>，且在放进服务链路前先测吞吐。
+  </li>
+</ol>
+
+<h2>必须打败的是「调好的第一级」</h2>
+
+<table>
+  <thead>
+    <tr><th>数据集</th><th>对默认 RRF</th><th>对调好的融合</th><th>留出集站住了吗</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>SciFact</td><td>+0.057</td><td>+0.033</td><td>否（37%）</td></tr>
+    <tr><td>ArguAna</td><td>+0.031</td><td>+0.017</td><td>否（2.5%）</td></tr>
+    <tr><td>WANDS</td><td>+0.039</td><td><strong>−0.008</strong></td><td>否（0%）</td></tr>
+    <tr><td>CodeSearchNet</td><td>+0.169</td><td>+0.135</td><td><strong>是（100%）</strong></td></tr>
+    <tr><td>DBPedia-entity</td><td>+0.137</td><td>+0.115</td><td><strong>是（100%）</strong></td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>WANDS 是那个必须记住的反例</strong>：对默认 RRF 是 +0.039（看起来赢了），
+  对调好的融合却是 −0.008（实际输了）。<strong>只做第一个对比，你会把变差当成优化上线。</strong>
+  五个数据集里只有两个在留出集上站住。
+</p>
+
+<h2>输了怎么诊断：两个不匹配</h2>
+
+<div class="failmode">
+  <div class="failmode-row">
+    <div class="failmode-sym">截断（窗口不够）</div>
+    <div class="failmode-fix">
+      用<strong>模型自己的 tokenizer</strong> 对一批 query-document 对分词，比较长度的 <strong>95 分位</strong>与模型窗口。
+      超窗口的对会被截断，模型<strong>只读了一部分文档就打分</strong>。
+      例：ArguAna 查询平均 168 词，512 token 截断下留给文档的空间极小；换 1024 窗口后失败变胜利。
+    </div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">训练领域不匹配</div>
+    <div class="failmode-fix">
+      对照 model card 的语言与领域。表里三个较老模型都没在代码上训过；换成含代码训练数据的模型后，
+      CodeSearchNet 从失败翻成全表最大的确认胜利——<strong>评的是同一批候选</strong>。
+    </div>
+  </div>
+</div>
+
+<p>
+  <strong>选型原则：按贴合度选，不按大小选。</strong>
+  <code>bge-reranker-base</code> 与 <code>jina-reranker-v2</code> 体积几乎相同，但只有后者赢过调好的融合。
+  <strong>训练数据与上下文窗口把它们分开了，体积没有。</strong>
+</p>
+
+<h2>候选数怎么定</h2>
+
+<ul>
+  <li><strong>在 10 个候选上就输的配置，加到 200 个还是输。</strong>所有在浅处落后的配置在深处依然落后——
+    <code>nDCG@10</code> 评的始终是同样的前 10 名。</li>
+  <li><strong>只在「相关文档命中率还在上升」的区间里加重排。</strong></li>
+  <li><strong>ArguAna</strong>：90% 的查询在前 25 个候选内就含那唯一的答案；加到 200 命中率升到 98%，<strong>增益反而变成损失</strong>（新候选把相关的挤出了前 10）。</li>
+  <li><strong>CodeSearchNet</strong>：25 → 200 时命中率从 80.5% 升到 90.5%，仍在上升，增益一路涨到 200。</li>
+  <li><strong>DBPedia-entity</strong>：到 <strong>50 个候选就拿到最终增益的 96%</strong>，走到 200 等于为最后 4% 付四倍算力。</li>
+  <li><strong>取「能拿到大部分增益的最小候选数」，并在自己的标注集上量。</strong></li>
+</ul>
+
+<div class="callout">
+  <p>
+    <strong>分片陷阱：候选深度是按分片计的。</strong>
+    每个分片各自接收 <code>limit</code> 并搜自己的数据，所以<strong>12 个分片 + <code>limit=200</code>，集合级别那一层最多会收到 2400 个候选</strong>。
+    重排挂在集合级别，它要打分的就是 2400 个，不是 200 个——这直接决定成本与延迟预算。
+  </p>
+</div>
+
+<h2>成本（这才是重排的门槛）</h2>
+
+<table>
+  <thead>
+    <tr><th>模型</th><th>体积</th><th>文档/秒</th><th>查询/秒（100 候选）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>ms-marco-MiniLM-L-6-v2</code></td><td>0.08 GB</td><td>64 – 212</td><td>0.6 – 2.1</td></tr>
+    <tr><td><code>ms-marco-MiniLM-L-12-v2</code></td><td>0.12 GB</td><td>34 – 117</td><td>0.3 – 1.2</td></tr>
+    <tr><td><code>bge-reranker-base</code></td><td>1.04 GB</td><td>16 – 45</td><td>0.2 – 0.5</td></tr>
+    <tr><td><code>jina-reranker-v2-base-multilingual</code></td><td>1.11 GB</td><td>&lt; 2（CPU）</td><td>&lt; 0.02</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>数量级对比（同一套环境）：</strong>100 个候选下，CPU 上三个较小模型要 <strong>0.5–5 秒/查询</strong>；
+    而加第二路检索（混合检索）只增加 <strong>0.6–1.5 毫秒</strong>。
+    <strong>重排的在线代价比「再加一路检索」高约三个数量级</strong>——这就是为什么先调融合、后考虑重排。
+  </p>
+</div>
+
+<ul>
+  <li><strong>有些模型在 CPU 上不可用</strong>：<code>jina-reranker-v2</code> 的 ONNX 导出在 CPU 上同时只跑一个注意力线程 → 低于 2 文档/秒；GPU（PyTorch）下 32–310 文档/秒。
+    <strong>质量与吞吐数字必须来自同一套部署条件。</strong></li>
+  <li><strong>许可证</strong>：<code>jina-reranker-v2</code> 为 <strong>CC-BY-NC-4.0（非商用）</strong>。选型必查许可证额外条款。</li>
+</ul>
+
+<h2>按症状选阶段（别用重排解决错的问题）</h2>
+
+<table>
+  <thead>
+    <tr><th>症状</th><th>该加的阶段</th><th>注意</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>相关候补被排在更弱的后面</td><td>交叉编码器 / 后期交互重排</td><td>先确认候选里有它</td></tr>
+    <tr><td>结果重复、彼此近似</td><td>MMR（最大边际相关性）</td><td><strong>用相关性换多样性，nDCG 不奖励多样性</strong>，自己量方向</td></tr>
+    <tr><td>一篇文档的多个块刷屏</td><td>按文档 ID <code>group_by</code> 分组</td><td><strong>分组字段必须建 payload 索引</strong>，否则 Qdrant Cloud 返回 400</td></tr>
+    <tr><td>时效、热度该影响排序</td><td>Formula Query</td><td>公式引用的每个字段都要 payload 索引</td></tr>
+  </tbody>
+</table>
+
+<h2>面试答题骨架（四段，缺一段就扣分）</h2>
+
+<ol>
+  <li><strong>机制</strong>：交叉编码器把查询与文档拼成一条序列联合编码，靠逐词交叉注意拿到双塔「分别编码」时丢掉的信息；代价是每个候选一次前向，所以只能做第二级。</li>
+  <li><strong>判据</strong>：把候选集当完美排序打分，与当前得分的差距 = 排序能捞回的上限。差距大才动排序，差距小/为 0 就去改候选。</li>
+  <li><strong>验证纪律</strong>：基线用调好的融合而非默认；只在 10 个候选上测；赢了才加候选数；必须过留出集（公开数据集五个只有两个站住；WANDS 对默认 RRF +0.039、对调好的融合 −0.008）。</li>
+  <li><strong>成本</strong>：100 候选下 CPU 每查询 0.5–5 秒，比加一路检索贵约三个数量级；注意部署条件与许可证。</li>
+</ol>
+
+<div class="docnav">
+  <h5>相关</h5>
+  <ul>
+    <li><a href="../lessons/0004-reranking-and-two-stage.html">第 4 课 · 重排与两段式检索</a></li>
+    <li><a href="retrieval-fusion-cheatsheet.html">检索与融合速查</a>（第 3 课）</li>
+    <li><a href="chunking-cheatsheet.html">切分策略速查</a>（第 2 课）</li>
+    <li><a href="rag-roadmap.html">全课程地图</a> · <a href="../GLOSSARY.md">Glossary</a></li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://qdrant.tech/articles/when-a-reranker-is-worth-it/" target="_blank">Qdrant: When Is a Reranker Worth It?</a> · <a href="https://qdrant.tech/articles/candidate-depth/" target="_blank">Qdrant: Candidate Depth</a> · <a href="https://arxiv.org/abs/1908.10084" target="_blank">Sentence-BERT</a> · <a href="https://arxiv.org/abs/2004.12832" target="_blank">ColBERT</a></p>
+  </section>
+  <section>
+    <h4>注意局限</h4>
+    <p>吞吐与增益数字均为 Qdrant 自测：五个公开数据集（5,183–100,000 文档），单分片单批次、未量化未过滤，CPU 为 Apple M5 Pro 15 线程。文中自述应作<strong>方向性</strong>参考，必须在自己的语料与并发下重测。</p>
+  </section>
+</footer>
+
+</body>
+</html>

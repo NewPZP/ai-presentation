@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · 切分策略速查</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">切分策略速查</h1>
+  <p class="lesson-meta">策略阶梯 · 参数起点 · 特殊文档 · 不变量断言 · 打印友好</p>
+</header>
+
+<main>
+
+<blockquote>
+  <p>
+    <strong>第一判据：</strong>如果这段文本脱离上下文，人还能看懂，那么模型也能看懂。
+    任何切分参数在报出来之前，先拿这句话过一遍。
+  </p>
+</blockquote>
+
+<h2>策略阶梯</h2>
+
+<table>
+  <thead>
+    <tr><th>档</th><th>策略</th><th>做法</th><th>代价 / 何时上</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>1</td>
+      <td><strong>固定长度</strong></td>
+      <td>按固定 token / 字符数硬切 + overlap</td>
+      <td>最省事、可预测。<strong>默认起点</strong>，不必先证明它不够用</td>
+    </tr>
+    <tr>
+      <td>2</td>
+      <td><strong>递归字符</strong></td>
+      <td>按分隔符优先级递归下刀：<code>["\n\n", "\n", " ", ""]</code></td>
+      <td>保住段落句子完整。想在档 1 上小步改进时用</td>
+    </tr>
+    <tr>
+      <td>3</td>
+      <td><strong>结构感知</strong></td>
+      <td>按 Markdown 标题 / HTML 标签 / PDF 章节 / LaTeX 环境切，块内保留标题路径</td>
+      <td>文档有结构时性价比最高。<strong>标题路径前缀 = 免费的上下文增强</strong></td>
+    </tr>
+    <tr>
+      <td>4</td>
+      <td><strong>语义切分</strong></td>
+      <td>句子成组做 embedding，在相邻组语义距离的转折处下刀</td>
+      <td>实验性、成本高。结构混乱、话题频繁切换时才考虑</td>
+    </tr>
+    <tr>
+      <td>5</td>
+      <td><strong>上下文增强</strong></td>
+      <td>LLM 为每块生成 50–100 token 定位说明，前置后再 embedding + 建 BM25</td>
+      <td>索引期成本约 $1.02 / 百万文档 token（靠 prompt caching）。前四档都不够用时才上</td>
+    </tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>反直觉但重要：</strong>Pinecone（一家卖向量数据库的公司）明确建议先固定长度起步，
+    只在被证明不够用时才迭代。花哨策略引入的是<strong>不可解释的变量</strong>——
+    你分不清收益来自策略本身，还是它顺带改变了块大小。
+  </p>
+</div>
+
+<h2>参数起点</h2>
+
+<table>
+  <thead>
+    <tr><th>参数</th><th>起点</th><th>说明</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>chunk size</td><td>256 / 512 token</td><td>候选区间取 128–1024：小的抓细粒度语义，大的保上下文</td></tr>
+    <tr><td>overlap</td><td>块大小的 10–20%</td><td>只防「答案横跨边界」。代价：索引膨胀 + 重复召回挤占 top-k</td></tr>
+    <tr><td>块上限</td><td>≤ embedding 模型上下文窗口</td><td>超了会被<strong>截断丢弃</strong>，丢掉的部分等于不存在</td></tr>
+    <tr><td>最小块</td><td>设一个 min_chars</td><td>碎块很常见，应向相邻同父节点合并</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+  <p>
+    <strong>单位陷阱：</strong>不同 embedding 模型分词方式不同，token 数必须按<strong>你实际用的模型</strong>估。
+    拿字符数当 token 数用，是在给自己埋雷。
+  </p>
+</div>
+
+<h2>四个决策问题（动手前先答）</h2>
+
+<ol>
+  <li><strong>切的是什么数据？</strong>长文档 vs 短内容；后者可能根本不该切。长文档常自带结构。</li>
+  <li><strong>用哪个 embedding 模型？</strong>信息容量与训练方式因领域（代码 / 金融 / 医疗 / 法律）差异很大。</li>
+  <li><strong>查询长什么样？</strong>短而具体 vs 长而复杂——目标是让 query 向量与 chunk 向量「对得上」。</li>
+  <li><strong>检索结果拿来干什么？</strong>语义搜索 / 问答 / 喂 agent，需要的粒度不同。</li>
+</ol>
+
+<h2>特殊文档怎么切</h2>
+
+<table>
+  <thead>
+    <tr><th>类型</th><th>做法</th><th>坑</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>表格</strong></td>
+      <td>解析成 Markdown / HTML 保住结构；整表为一块，超长按行分组且<strong>每块重复表头</strong>；元数据记表名与列名</td>
+      <td>硬切会切断行列关系——<strong>一行失去表头就彻底没意义</strong></td>
+    </tr>
+    <tr>
+      <td><strong>PDF</strong></td>
+      <td>优先按章节 / 页眉页脚 / 目录层级解析，别直接抽纯文本</td>
+      <td>双栏排版、页眉页脚、脚注会混进正文；扫描件要先 OCR</td>
+    </tr>
+    <tr>
+      <td><strong>代码</strong></td>
+      <td>按函数 / 类 / 文件边界切，块内保留文件路径与导入</td>
+      <td>按字符数切会把函数劈成两半，上下文对不上</td>
+    </tr>
+    <tr>
+      <td><strong>HTML / Markdown</strong></td>
+      <td>按标签 / 标题层级切，把标题路径写进块</td>
+      <td>导航栏、广告、页脚会被当成正文切进去</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>用数据定 chunk size（四步）</h2>
+
+<ol>
+  <li><strong>定候选区间</strong>：128 / 256 / 512 / 1024 token。</li>
+  <li><strong>并行建索引</strong>：多个索引，或同一索引的多个 namespace，每个尺寸一份。</li>
+  <li><strong>跑评测</strong>：用一批有代表性的 query，比较各尺寸的 Recall@k。</li>
+  <li><strong>迭代</strong>：在胜出区间里继续细分，直到收益不再明显。</li>
+</ol>
+
+<p>
+  <strong>前提是有一个带标注的评测集</strong>（query → 应该被召回的 chunk）。
+  没有它，这四步一步都跑不动——面试时主动说出这个前提，等于当场证明你懂评测驱动。
+</p>
+
+<h2>切分器的不变量断言（写完就测）</h2>
+
+<pre><code><span class="c"># 三条不变量，缺一条你就发现不了 bug</span>
+<span class="c"># 注意 text = "标题路径\n" + 正文，算上限时要把前缀减掉，否则差一个字符</span>
+prefix = <span class="k">lambda</span> c: len(c.heading_path) + 1 <span class="k">if</span> c.heading_path <span class="k">else</span> 0
+
+<span class="k">assert</span> all(len(c.text) - prefix(c) &lt;= max_chars <span class="k">for</span> c <span class="k">in</span> chunks)      <span class="c"># ① 正文不超上限</span>
+<span class="k">assert</span> <span class="s">""</span>.join(c.text <span class="k">for</span> c <span class="k">in</span> chunks).find(first_sentence) &gt;= 0    <span class="c"># ② 不丢内容</span>
+<span class="k">assert</span> all(c.heading_path <span class="k">for</span> c <span class="k">in</span> structured_chunks)                  <span class="c"># ③ 路径不为空</span></code></pre>
+
+<p>
+  ① 为什么必须有：一个超长段落（长表格、密集条款）会原样穿透段落级切分，产出远超上限的块，
+  而它「看起来」完全正常——没有断言你不会注意到。
+</p>
+
+<h2>检索粒度 ≠ 生成粒度</h2>
+
+<p>
+  不必为「检索要小、生成要大」二选一。做法是 <strong>chunk expansion</strong>
+  （也叫 parent-child / small-to-big）：用小块检索保证精度与低延迟，
+  命中后把邻近块或父块一起带进上下文。Pinecone 原话：把切分策略与 query 时的 chunk expansion 配起来，
+  能<strong>在不牺牲上下文的前提下拿到低延迟检索</strong>。
+</p>
+
+<h2>故障 → 药方</h2>
+
+<div class="failmode">
+  <div class="failmode-row">
+    <div class="failmode-sym">块检索不到，但文档里明明有</div>
+    <div class="failmode-fix">先看块是否<strong>脱离上下文就没了意义</strong>（指代、省略主语）。加标题路径前缀，或上上下文增强。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">精确查询（型号、错误码）搜不到</div>
+    <div class="failmode-fix">这可能不是切分问题，而是<strong>检索方式</strong>问题——纯向量对低频精确串不敏感，见第 3 课的混合检索。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">同一条内容反复出现在结果里</div>
+    <div class="failmode-fix">overlap 过大，或被切成多块后重复召回。调小 overlap，检索后做去重。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">答案总差最后一句 / 半个表格</div>
+    <div class="failmode-fix">边界切断。加 overlap，或改用 chunk expansion 带上邻近块。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">块里混了好几个主题</div>
+    <div class="failmode-fix">块太大、语义被平均。调小 chunk size，或改用结构感知切分。</div>
+  </div>
+</div>
+
+<div class="docnav">
+  <h5>相关</h5>
+  <ul>
+    <li><a href="../lessons/0002-chunking-and-indexing.html">第 2 课 · 切分与索引</a></li>
+    <li><a href="rag-roadmap.html">全课程地图</a></li>
+    <li><a href="../GLOSSARY.md">RAG 面试 Glossary</a></li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://www.pinecone.io/learn/chunking-strategies/" target="_blank">Pinecone: Chunking Strategies for LLM Applications</a></p>
+    <p><a href="https://www.anthropic.com/engineering/contextual-retrieval" target="_blank">Anthropic: Introducing Contextual Retrieval</a></p>
+  </section>
+  <section>
+    <h4>注意局限</h4>
+    <p>本页收益数字均为厂商自测（Anthropic 的 embedding 对比未测开源模型；Pinecone 的策略建议无自研实验数据）。面试引用时请一并说明。</p>
+  </section>
+</footer>
+
+</body>
+</html>

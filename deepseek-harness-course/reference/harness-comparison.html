@@ -1,0 +1,333 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · Harness 选型对比</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">Harness 选型对比</h1>
+  <p class="lesson-meta">Pi / DSH / OpenCode 等 · 含同模型实测 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  数据截至 2026-09。对比口径为 OpenCode 1.18.30 / pi 0.85.1 / DSH 0.1.5-rc.1。生态变化快，选型前请复核最新版本。
+</p>
+
+<h2>一句话</h2>
+
+<blockquote>
+  <p>
+    Harness 都共享同一个五步循环；<strong>差异全在循环外面：规划、记忆、沙箱、子代理</strong>。选型不是选谁更强，是选<strong>它优化的是哪种失败模式</strong>。
+  </p>
+</blockquote>
+
+<h2>Harness 的五个部分</h2>
+
+<p>
+  <code>Agent = Model + Harness</code>。模型只做一件事：给定文本和工具列表，预测下一句话或下一个工具调用。其余全是 harness：
+</p>
+
+<pre><code>① 循环      —— 反复调模型直到任务完成
+② 工具路由   —— 把调用分发到文件系统 / shell / 外部 API
+③ 记忆      —— 决定哪些上下文留到下一轮
+④ 规划      —— 动工前把大任务拆成步骤
+⑤ 沙箱边界   —— 约束工具能碰什么</code></pre>
+
+<p>任何 harness 都实现这五个；<strong>好不好的分界在 ③④⑤ 和「能不能派子代理且不污染主对话」。</strong></p>
+
+<h2>四种哲学：各自对赌什么</h2>
+
+<table>
+  <thead>
+    <tr><th>哲学</th><th>代表</th><th>优化 against</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>全部皆插件</strong></td><td><strong>DSH</strong></td><td>架构锁定（architectural lock-in）</td></tr>
+    <tr><td><strong>少量固定机制，做到可靠</strong></td><td>Claude Code、LangChain Deep Agents</td><td>长会话不可靠</td></tr>
+    <tr><td><strong>会复利的记忆</strong></td><td>Hermes Agent</td><td>跨会话重复劳动</td></tr>
+    <tr><td><strong>激进极简</strong></td><td><strong>Pi</strong></td><td>臃肿（bloat）</td></tr>
+  </tbody>
+</table>
+
+<p>
+  四种都对，只是赌的失败模式不同。<strong>先问自己「今天哪种失败模式在烧我的时间」，答案会指向正确的 harness。</strong>
+</p>
+
+<h2>全景表</h2>
+
+<table>
+  <thead>
+    <tr><th>Harness</th><th>出品</th><th>优化目标</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Claude Code</td><td>Anthropic</td><td>端到端编码会话：规划、编辑、测试、提交</td></tr>
+    <tr><td><strong>DeepSeek Harness</strong></td><td>DeepSeek AI</td><td>运行时完全模块化</td></tr>
+    <tr><td>Deep Agents</td><td>LangChain</td><td>模型无关地复刻 Claude Code 的机制</td></tr>
+    <tr><td>Hermes Agent</td><td>Nous Research</td><td>跨渠道常驻、技能复利</td></tr>
+    <tr><td><strong>Pi</strong></td><td>Mario Zechner / Earendil</td><td>激进极简：4 个工具，其余 opt-in</td></tr>
+    <tr><td>Oh-My-Pi（<code>omp</code>）</td><td>Can Bölük</td><td>Pi 的极大化 fork：内建 IDE</td></tr>
+    <tr><td>OpenHands</td><td>All Hands AI</td><td>Docker 化自主软件工程师</td></tr>
+    <tr><td>Aider</td><td>社区</td><td>Git 原生的可审阅提交循环</td></tr>
+    <tr><td>Cline</td><td>Cline Bot</td><td>VS Code 内、每步审批</td></tr>
+  </tbody>
+</table>
+
+<h2>核心对比：Pi vs DSH</h2>
+
+<p>
+  两者是最鲜明的两个极端。<strong>一句话概括：DSH 把「缺什么」交给插件；Pi 把「多什么」直接砍掉。</strong>
+</p>
+
+<table>
+  <thead>
+    <tr><th></th><th>Pi</th><th>DSH</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>作者</td><td>Mario Zechner（libGDX 作者）</td><td>DeepSeek 官方</td></tr>
+    <tr><td>公开 / 许可</td><td>2025 · MIT</td><td>2026-08-13 · MIT</td></tr>
+    <tr><td>星标</td><td>~91,600（<strong>一年有机增长</strong>）</td><td>~233,000（<strong>两天暴涨 95k</strong>）</td></tr>
+    <tr><td>设计方针</td><td><strong>最小限</strong></td><td><strong>全部插件</strong></td></tr>
+    <tr><td>默认工具</td><td><strong>4 个</strong>：read / write / edit / bash</td><td>26 个</td></tr>
+    <tr><td>明确砍掉</td><td>MCP、子代理、plan mode、<strong>权限弹窗</strong>、TODO、background bash</td><td>固定的 workflow</td></tr>
+    <tr><td>扩展方式</td><td>TypeScript extension + Skills + prompt template</td><td>Cordis 插件替换（连 loop 都能换）</td></tr>
+    <tr><td>会话</td><td><strong>JSONL 树</strong>，可任意分叉、回退</td><td>append-only 日志，resume / fork / search / replay</td></tr>
+    <tr><td>权限 / 沙箱</td><td><strong>没有内建权限系统</strong>，靠容器</td><td>内建三档沙箱 + 审批</td></tr>
+    <tr><td>非交互</td><td><code>pi -p</code></td><td><code>dsh --profile headless</code></td></tr>
+  </tbody>
+</table>
+
+<h3>Pi 砍掉每样东西都有理由</h3>
+
+<p>README 里写明各自的替代方案：MCP → 用 CLI 工具或 extension；子代理 → 用 tmux 或 extension；权限 → <strong>用容器</strong>。</p>
+
+<div class="callout">
+  <p>
+    <strong>Pi 的官方安全声明（原文要点）：</strong> Pi 不包含用于限制文件系统、进程、网络或凭据访问的内置权限系统，<strong>默认以启动它的用户和进程的权限运行</strong>。需要更强边界就自己容器化——官方给了三条路径：Gondolin 扩展（工具进本地 Linux 微 VM，auth 留在宿主）、纯 Docker、OpenShell。
+  </p>
+</div>
+
+<h3>顺带：Oh-My-Pi 是反方向</h3>
+
+<p>
+  <code>omp</code> 是 Pi 的<strong>极大化 fork</strong>：用 Rust 重写引擎、60+ 模型供应商、31 个内建工具，把 IDE 能力（LSP 诊断、DAP 调试器、持久执行内核）直接烤进去。<strong>同一份「四工具内核」可以被推向两个相反极端</strong>，这本身说明内核的边界划得干净。
+</p>
+
+<h2>同模型实测：差异有多大</h2>
+
+<p>
+  一份第三方实测把三个 harness 接到<strong>同一个模型</strong>（Fireworks 的 DeepSeek V4 Flash，经 NeMo Switchyard 的 OpenAI 兼容端点，并核对 session log 的 <code>responseModel</code> 确认一致），跑<strong>同一个任务</strong>：修一个 Python CLI 的两个 bug + 加 <code>--top N</code> + 写 pytest + 跑通。
+</p>
+
+<table>
+  <thead>
+    <tr><th></th><th>OpenCode</th><th>Pi</th><th>DSH</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>用时</td><td>68 秒</td><td><strong>45 秒</strong></td><td>71 秒</td></tr>
+    <tr><td>模型请求次数</td><td>19</td><td><strong>6</strong></td><td>13</td></tr>
+    <tr><td>工具调用</td><td>19</td><td><strong>7</strong></td><td>14</td></tr>
+    <tr><td><strong>首个请求输入 tokens</strong></td><td>8,084</td><td><strong>1,744</strong></td><td>7,626</td></tr>
+    <tr><td><strong>输入 tokens 合计</strong></td><td>238,856</td><td><strong>19,899</strong></td><td>148,638</td></tr>
+    <tr><td>输出 tokens 合计</td><td>4,617</td><td>2,007</td><td>4,277</td></tr>
+    <tr><td>新增测试</td><td>8</td><td>6</td><td>8</td></tr>
+    <tr><td>pytest 结果</td><td>8 passed</td><td>6 passed</td><td>8 passed</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>三个都完成了任务，报告与实际结果也一致。</strong> 作者明确声明这是各跑一次，<strong>不是用来评优劣的</strong>。
+</p>
+
+<p>但数字的含义很清楚：</p>
+
+<ul>
+  <li><strong>首个请求的大小 = 系统提示词 + 工具定义。</strong> 任务文本三者相同，所以 8,084 vs 1,744 的差距<strong>纯粹是 harness 塞给模型的「前言」</strong>。</li>
+  <li>这个差距<strong>每次请求都累积</strong>：总输入 tokens 上 OpenCode 约是 Pi 的 <strong>12 倍</strong>。</li>
+  <li>能用 prompt caching 的路径费用影响小，但<strong>跑本地模型时，这个差值直接加到每次的 prefill 时间上</strong>。</li>
+</ul>
+
+<blockquote>
+  <p>
+    <strong>Pi 的省 token 不是优化出来的，是结构上就没有那么多东西要发。</strong> 这与<a href="model-cost-quick-ref.html">模型与成本速查</a>里的「每次调用重发整个 surface」是同一件事的两面。
+  </p>
+</blockquote>
+
+<h2>一个反直觉事实：DSH 依赖 Pi</h2>
+
+<p>
+  DSH 的<strong>多供应商接入层就是 Pi 的包</strong>：<code>dsh-llm-pi-ai</code> 插件依赖 Pi 仓库的 <code>@earendil-works/pi-ai</code>，OpenAI 兼容 / Anthropic 兼容端点的连接都在那里处理；DeepSeek 自家模型另有专用适配器。
+</p>
+
+<p>
+  这解释了两件事：为什么 DSH 的配置键叫 <code>llm-pi-ai</code>、<code>api: openai-completions</code> 的命名和 Pi 一模一样；以及为什么它这么快就支持一堆第三方供应商——<strong>它没重造这块</strong>。
+</p>
+
+<blockquote>
+  <p>
+    所以更准确的定位是：<strong>Pi 是最小的 harness 内核 + 可复用的 LLM 接入层；DSH 是最大的 harness 框架，而它在底层用了 Pi 的零件。</strong> 官方分类把 DSH 归在「模型公司自研 harness」与「模型无关 OSS harness」<strong>中间</strong>。
+  </p>
+</blockquote>
+
+<h2>模型 × Harness 的适配问题</h2>
+
+<p>
+  这是选型时最容易忽略、但影响很大的一点：<strong>模型是在自家 harness 上做过事后训练的，工具词汇刻进了权重。</strong>
+</p>
+
+<table>
+  <thead>
+    <tr><th>维度</th><th>Codex CLI</th><th>Claude Code</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>编辑工具形态</td><td><code>apply_patch</code>（patch 格式）</td><td><code>Edit</code> 传 <code>old_string</code> / <code>new_string</code>（字符串替换）</td></tr>
+    <tr><td>上下文文件名</td><td><code>AGENTS.md</code></td><td><code>CLAUDE.md</code></td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>给模型一套它不熟悉的工具格式，它会多花推理 token、多犯错。</strong>
+</p>
+
+<h3>证据</h3>
+
+<table>
+  <thead>
+    <tr><th>条件</th><th>Terminal-Bench 2.1</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>Claude Opus 4.6 + Claude Code（纯正组合）</td><td><strong>70.1%</strong></td></tr>
+    <tr><td>Claude Opus 4.6 + Terminus 2（通用 harness）</td><td>63.8%</td></tr>
+  </tbody>
+</table>
+
+<p>
+  同一个模型，<strong>6 个百分点纯粹来自 harness</strong>。arXiv 的 Harness-Bench 用 5,194 次运行得出同向结论：模型 × harness 的组合不同，<strong>完成率和失败方式都差很多</strong>。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>⚠️ 因果是推断，不是实测。</strong> 「事后训练导致差异」这个解释在公开范围内<strong>没有能切分原因的对照实验</strong>。差异被测量到了，原因没有。引用时请分开说。
+  </p>
+</div>
+
+<h3>实用推论</h3>
+
+<ul>
+  <li>把 Claude / GPT 放到非纯正 harness 上，<strong>性能要重新测</strong>，不能假设不变。</li>
+  <li><strong>没有专用 harness、或没有围起来的 open-weight 模型（GLM、Kimi、DeepSeek、Qwen）</strong>与模型无关 harness 搭配最自然。</li>
+  <li>DSH 内置了分别读取 <strong>Claude Code 和 Codex 的 <code>hooks.json</code></strong> 的插件——<strong>已有 harness 的配置资产可以搬过来</strong>。</li>
+</ul>
+
+<h2>治理差异：谁能用订阅</h2>
+
+<p>流传的「不该把 Claude/OpenAI 模型放到第三方 harness」<strong>不准确</strong>——限制只来自一家，而且方向相反。</p>
+
+<table>
+  <thead>
+    <tr><th></th><th>Anthropic</th><th>OpenAI</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>态度</td>
+      <td><strong>收紧</strong></td>
+      <td><strong>放开</strong></td>
+    </tr>
+    <tr>
+      <td>时间线 / 依据</td>
+      <td>2026-01-09 服务端封堵 Pro/Max 的 OAuth 令牌被第三方工具使用；2 月法务文档要求第三方用 Console API key；<strong>2026-04-04 起订阅额度不能给第三方 harness 用</strong></td>
+      <td>高管 Tibo Sottiaux 与 Sam Altman 公开表示 ChatGPT Plus 及以上订阅<strong>可以</strong>用于 pi、OpenCode 等第三方 harness</td>
+    </tr>
+    <tr>
+      <td>结论</td>
+      <td>API 计费仍可用 → <strong>不是「不能用」，是「定额用不了、变贵」</strong></td>
+      <td>公开表态允许（规约未明文写入）</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  顺带一个有信息量的数字：Sottiaux 说 <strong>Pi 和 OpenCode 各占 Codex 流量的约 5%</strong>。
+</p>
+
+<h2>选型决策表</h2>
+
+<table>
+  <thead>
+    <tr><th>你的情况</th><th>建议</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>担心厂商 / 架构锁定，预期频繁换模型</td><td><strong>DSH</strong>（全部插件）或 Deep Agents（模型无关）</td></tr>
+    <tr><td>在意 token 成本 / 跑本地模型，想要最小前言</td><td><strong>Pi</strong>（结构性最小）</td></tr>
+    <tr><td>想自己掌握 harness 内部，愿意按需补 extension</td><td><strong>Pi</strong>（初始需自己选型）</td></tr>
+    <tr><td>要在工具 / 会话 / 沙箱单位做替换实验</td><td><strong>DSH</strong>（Web UI 完成度也高）</td></tr>
+    <tr><td>要开箱即用的完整编码体验</td><td>Claude Code / Aider / Deep Agents</td></tr>
+    <tr><td>想复刻 Claude Code 体验但换模型</td><td>OpenCode（LSP、MCP、IDE 齐全，代价是前言大）</td></tr>
+    <tr><td>要挂聊天平台、跨会话累积能力</td><td>Hermes Agent</td></tr>
+    <tr><td>要多 agent 长流程协作</td><td>上一层：LangGraph / CrewAI / AG2 / Mastra</td></tr>
+    <tr><td>要最小审计面，自己写扩展</td><td>Pi 或 Oh-My-Pi</td></tr>
+  </tbody>
+</table>
+
+<h2>值得单独学的：Pi 的供应链硬化</h2>
+
+<p>
+  这是 Pi 相对 DSH 最被低估的优势——它把依赖安全<strong>做成了制度</strong>，而 DSH 是把决定权交给用户（见<a href="tool-plugin-dev-quick-ref.html">Tool 插件开发速查</a>里的 <code>allowBuilds</code>）。
+</p>
+
+<table>
+  <thead>
+    <tr><th>措施</th><th>作用</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>直接外部依赖<strong>精确锁版本</strong>（内部 workspace 才用范围）</td><td>消除版本漂移</td></tr>
+    <tr><td><code>.npmrc</code> 设 <code>save-exact=true</code>、<code>min-release-age=2</code></td><td>避免解析到<strong>当天发布</strong>的依赖（供应链攻击高发窗口）</td></tr>
+    <tr><td>lockfile 是唯一真相，pre-commit 拦截 lockfile 改动</td><td>依赖变更＝需评审的代码变更</td></tr>
+    <tr><td>发布的 CLI 包内附 <code>npm-shrinkwrap.json</code></td><td>为 npm 用户钉死传递依赖</td></tr>
+    <tr><td>全链路 <code>--ignore-scripts</code></td><td>安装期不执行包代码</td></tr>
+    <tr><td>定时 <code>npm audit --omit=dev</code> + <code>npm audit signatures</code></td><td>持续扫描 + 验签</td></tr>
+    <tr><td>生命周期脚本依赖走<strong>显式白名单</strong></td><td>新的脚本依赖必须评审后才放行</td></tr>
+  </tbody>
+</table>
+
+<h2>一条不变的选型原则</h2>
+
+<blockquote>
+  <p>
+    <strong>看曲线的形状，不只看当前高度。</strong> 陡峭尖峰 + 走平的尾巴＝社区正在形成，值得关注后再投入生产；长而浅、不中断的爬升＝工程师在热度退去后<strong>还留着它</strong>，是更强的慢信号。
+  </p>
+</blockquote>
+
+<p>配套的两条硬提醒：</p>
+
+<ul>
+  <li><strong>star 是收藏数，不是安装量。</strong></li>
+  <li><strong>无论选哪个，可观测性不是可选项。</strong> 一个在第 30 轮失败的无人值守任务，没有 trace 就是灾难。</li>
+</ul>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://www.freecodecamp.org/news/what-is-an-agent-harness/" target="_blank">freeCodeCamp: What Is an Agent Harness?</a> — 四种哲学、十款 harness 全景、增长曲线对比</p>
+    <p><a href="https://dev.classmethod.jp/articles/reona-coding-harness-opencode-pi-dsh/" target="_blank">DevelopersIO: OpenCode / pi / DSH 同模型实测</a> — 上表实测数据、模型×harness 适配、订阅政策时间线</p>
+    <p><a href="https://github.com/earendil-works/pi" target="_blank">earendil-works/pi README</a> — 四工具方针、容器化路径、供应链硬化</p>
+    <p><a href="https://pi.dev" target="_blank">pi.dev</a> · <a href="https://github.com/deepseek-ai/deepseek-harness" target="_blank">deepseek-ai/deepseek-harness</a></p>
+  </section>
+  <section>
+    <h4>相关课程与参考</h4>
+    <p><a href="../lessons/0001-what-is-deepseek-harness.html">第 1 课 · DSH 是什么？</a>（Harness 定位）</p>
+    <p><a href="../lessons/0006-models-cost-and-graduation.html">第 6 课 · 模型、成本与毕业</a>（成本控制）</p>
+    <p><a href="architecture-patterns.html">DSH 架构思想速查</a> · <a href="model-cost-quick-ref.html">模型与成本速查</a></p>
+  </section>
+</footer>
+
+</body>
+</html>

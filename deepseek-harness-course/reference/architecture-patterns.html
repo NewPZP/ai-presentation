@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · DeepSeek Harness 架构思想</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · DeepSeek Harness</p>
+  <h1 class="lesson-title">DSH 架构思想速查</h1>
+  <p class="lesson-meta">六个可迁移的设计模式 · 附「防的是什么故障」 · 打印友好</p>
+</header>
+
+<main>
+
+<p style="color:var(--ink-faint); font-size:0.9rem;">
+  对应 DSH <code>0.1.2-rc.1</code> / <code>0.1.5-rc.1</code>（2026-09）。这些思想的价值高于当前成熟度——developer preview 会变，模式不会。
+</p>
+
+<h2>一句话</h2>
+
+<blockquote>
+  <p>
+    这六个思想可以归成三类：<strong>控制流怎么组织</strong>（1、2）、<strong>契约划在哪</strong>（3、4）、<strong>证据怎么留</strong>（5、6）。
+  </p>
+</blockquote>
+
+<h2>总纲：自由度分布是一等设计决策</h2>
+
+<p>
+  <strong>母题</strong>。opencode 把脊柱写死、自由度给到边缘扩展点；DSH 把自由度给到每一层，<strong>包括 agent loop 本身</strong>。这不是成熟度之差，是范式之差。
+</p>
+
+<p>
+  关键在于<strong>怎么让「loop 也是插件」不变成灾难</strong>。官方能力表里 <code>ctx.agentLoop</code> 的说明给出了答案：
+</p>
+
+<blockquote>
+  <p>
+    <strong>唯一的具体循环插件；扩展包依赖 <code>dsh-agent</code> 的事件和服务，而不依赖此包。</strong>
+  </p>
+</blockquote>
+
+<p>
+  即：<strong>扩展契约挂在抽象服务层，而不是实现包上。</strong> 换掉 loop，扩展不会碎。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>自检：</strong>你的插件化是真货还是表演？看扩展 import 的是接口包还是实现包。如果扩展 import 了具体实现，「可替换」就只是理论上的。
+  </p>
+</div>
+
+<h2>一、可逆副作用：让「换脊柱」在工程上安全</h2>
+
+<p>口号谁都会喊，难点是<strong>卸载后不留垃圾</strong>。Cordis 用两条性质解决：</p>
+
+<table>
+  <thead>
+    <tr><th>性质</th><th>含义</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>注册即可逆副作用</strong></td>
+      <td>提示词片段、工具 schema、适配器、监听器全部通过 <code>ctx.effect()</code> / <code>ctx.on()</code> 安装，reload 与 teardown 时<strong>按预期撤销</strong></td>
+    </tr>
+    <tr>
+      <td><strong>依赖即启动顺序</strong></td>
+      <td>用 <code>inject</code> 声明所需服务，<strong>加载顺序通过服务依赖表达，而非手动编排启动序列</strong>。依赖未满足就停在 PENDING，服务方退出时依赖方按序卸载</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>Fiber 六态生命周期，清理按 <strong>LIFO</strong>（后注册的清理先执行）：</p>
+
+<pre><code>PENDING → LOADING → ACTIVE / FAILED → UNLOADING → DISPOSED</code></pre>
+
+<p>
+  这两条合起来，才是「一个组件摘掉后进程里不留半激活服务」的保证——<strong>agent loop 能以普通插件身份注册，靠的就是这个工程条件。</strong>
+</p>
+
+<h3>它不负责什么（同样重要）</h3>
+
+<p>
+  disposer 只回收通过 <code>ctx.effect()</code> 注册的<strong>进程内资源</strong>。注册过什么才清理什么：
+</p>
+
+<ul>
+  <li>文件写了就是写了，<strong>业务动作的回滚不归它管</strong></li>
+  <li><strong>拦恶意代码也不归它管</strong>，那是 sandbox 包的事</li>
+</ul>
+
+<h2>二、seam / core 的分类纪律</h2>
+
+<p>
+  官方把每个服务<strong>显式分类</strong>，这张表本身就是最好的设计文档。
+</p>
+
+<table>
+  <thead>
+    <tr><th>类型</th><th>含义</th><th>例子</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>seam</strong></td>
+      <td>有可替换实现</td>
+      <td><code>llm</code>、<code>fs</code>、<code>shell</code>、<code>sandbox</code>、<code>storage</code>、<code>session-persistence</code>、<code>subagents</code>、<code>jobs</code>、<code>skills</code>、<code>compaction</code>、<code>approval</code>、<code>codeRuntime</code></td>
+    </tr>
+    <tr>
+      <td><strong>core</strong></td>
+      <td>单一所有者，无替代实现</td>
+      <td><code>sessions</code>、<code>tools</code>、<code>systemPrompt</code>、<code>agentLoop</code>、<code>tokenMeter</code>、<code>invariants</code>、<code>goals</code>、<code>planMode</code>、<code>sandboxPolicy</code></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>三种角色，缺一不成缝</h3>
+
+<blockquote>
+  <p>
+    <strong>任何单一角色都不是 seam。</strong> 完整能力才构成其 seam。
+  </p>
+</blockquote>
+
+<pre><code>┌─────────────┐     ┌──────────────────┐     ┌──────────────┐
+│  dsh-shell  │────▶│  dsh-bash-local  │     │ dsh-tool-bash│
+│(definition) │     │    (provider)    │     │(consumer/tool)│
+└─────────────┘     └──────────────────┘     └──────────────┘
+       ▲                                            │
+       └────────────────────────────────────────────┘
+                    inject: ['shell']</code></pre>
+
+<p>
+  <strong>Provider 和 Consumer 互不依赖</strong>，都只依赖 Definition。Definition 拥有 Request/Result 类型。
+</p>
+
+<h3>一条教科书级的设计自觉</h3>
+
+<p>
+  <code>ctx.sandboxPolicy</code> 被定为 <code>core</code>，官方说明：
+</p>
+
+<blockquote>
+  <p>
+    统一保存部署默认模式和工作区根目录……<strong>两类强制执行组件都读取该服务，因此 bash 与 fs 不会限制到不同的根目录。</strong>
+  </p>
+</blockquote>
+
+<p>
+  它在防一个非常具体、也非常容易发生的 bug：<strong>两条执行路径各自持有沙箱策略，结果围栏宽度不一致。</strong> 解法是设立唯一的策略所有者。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>不要预防性拆分。</strong> 官方明确说：只有角色需要<strong>独立演进</strong>时才拆成不同包。一个简单的工具插件就写在一个包里。
+  </p>
+</div>
+
+<h2>三、策略与执行分离：工具执行流水线</h2>
+
+<p>工具调用的完整链路：</p>
+
+<pre><code>tools/pre-execute    (waterfall)
+      ↓
+  单调守卫 (monotonic guard)
+      ↓
+tools/execute        (waterfall)   <span class="c"># 环绕分发可在此加超时/重试</span>
+      ↓
+tools/post-execute   (waterfall)
+      ↓
+  finalizeContent    (定义自身控制)
+      ↓
+tools/result         (观察不可变结果)</code></pre>
+
+<p>核心价值一句话：</p>
+
+<blockquote>
+  <p>
+    <strong>钩子便可跨越不同工具系列，而无需让工具与某个策略服务耦合。</strong>
+  </p>
+</blockquote>
+
+<p>
+  对比朴素写法：每个工具自己去问「这个操作允许吗」——策略散落在 N 个工具里，改一次要动 N 处。DSH 让策略挂在水位上，<strong>工具完全不知道策略存在</strong>。
+</p>
+
+<table>
+  <thead>
+    <tr><th>细节</th><th>规则</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>守卫是单调的</strong></td><td>一旦拒绝，后续监听器<strong>无法撤销</strong>——防止后注册的插件偷偷放行</td></tr>
+    <tr><td><strong>审批在守卫之前</strong></td><td><code>ctx.approval</code> 先处理询问；但「不得重新排序的所有者策略」仍作为已注册的守卫</td></tr>
+    <tr><td><strong>三个 waterfall 可改写调用</strong></td><td>pre / execute / post 各能改一次</td></tr>
+  </tbody>
+</table>
+
+<h3>Cordis 的五个分发模式</h3>
+
+<table>
+  <thead>
+    <tr><th>模式</th><th>await?</th><th>顺序</th><th>有返回值?</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>emit</code></td><td>否</td><td>按注册顺序观察</td><td>否</td></tr>
+    <tr><td><code>waterfall</code></td><td>否</td><td>按注册顺序观察</td><td>是（环绕中间件）</td></tr>
+    <tr><td><code>parallel</code></td><td>是</td><td>所有监听器并行</td><td>否</td></tr>
+    <tr><td><code>serial</code></td><td>是</td><td>按注册顺序</td><td>是</td></tr>
+    <tr><td><code>bail</code></td><td>否</td><td>直到某个监听器返回 bail 值</td><td>是</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>分发模式是事件公开约定的一部分</strong>——新事件用 <code>@mode</code> 标签记录，生成的目录可以拿声明和调用点做交叉校验。waterfall 接收 <code>(...args, next)</code>：调用 <code>next()</code> 走下游，不调用直接返回＝短路；<strong>对单决策事件，短路是设计意图</strong>。
+</p>
+
+<h2>四、事件溯源 + 运行时不变量：可审计性做成断言</h2>
+
+<p>大多数系统的「可追溯」＝记日志。DSH 多做一步，而且这步是关键：</p>
+
+<p>
+  <strong>它在 <code>llm/stream</code> 上挂监听器，对每个即将发出的请求做断言</strong>——请求里的 messages 必须与从日志独立折叠出的结果<strong>逐字节一致</strong>，不一致就报 desync：
+</p>
+
+<pre><code><span class="k">const</span> expected = session.deriveMessages()
+<span class="k">if</span> (JSON.stringify(options.messages) !== JSON.stringify(expected)) {
+  fail(<span class="s">`llm request ... diverges from the dispatch-time durable derivation`</span>)
+}</code></pre>
+
+<p>
+  这把「模型可见即入日志」从<strong>口号</strong>变成了<strong>运行时断言</strong>。UI 轨迹、fork 出的会话、事后回放，与模型实际收到的请求<strong>共用同一条日志源</strong>，漂移会被当场抓住。
+</p>
+
+<p>
+  日志形态：append-only，每条事件是 <code>{ type, seq, time, data }</code> 的信封（<code>seq</code> 会话内单调递增）。
+</p>
+
+<h3>压缩是视图变换，不是数据销毁</h3>
+
+<ul>
+  <li>日志 append-only，<strong>旧事件永不删除</strong></li>
+  <li>compaction 本身是<strong>一个新追加的事件</strong>，用 <code>SurfaceOp</code> 替换派生历史里的一段区间</li>
+  <li>被遮蔽的节点必须<strong>全部</strong>在 <code>sourceEventSeqs</code> 里被引用</li>
+</ul>
+
+<p>
+  所以「模型看到的压缩历史」与「日志里的全量事实」<strong>同时存在</strong>。
+</p>
+
+<h3>代价与边界（必须知道）</h3>
+
+<div class="callout">
+  <p>
+    <strong>代价：</strong>每次生产派发要把全量消息历史<strong>序列化两遍</strong>，属于热循环上的税。他们选择付这个税换审计性。
+  </p>
+</div>
+
+<blockquote>
+  <p>
+    <strong>边界：这条不变量兜住的是「一致」，不是「正确」。</strong> 日志能证明模型看见了什么，不能证明它看见的东西是对的。所以——把日志当<strong>观测与归因工具</strong>，而不是<strong>验收工具</strong>；生成物的验收要留在 Harness 之外。
+  </p>
+</blockquote>
+
+<p>
+  顺带：<code>ctx.invariants</code> 本身也是一个服务——各包在配套子路径注册本包本地的检查，该服务负责选择、唯一性、子 fiber，以及标明所属包的失败。
+</p>
+
+<h2>五、Fail-closed：默认拒绝，而不是默认降级</h2>
+
+<table>
+  <thead>
+    <tr><th>场景</th><th>行为</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>找不到可用沙箱后端</td><td>抛 <code>SANDBOX_UNAVAILABLE</code>，<strong>绝不降级裸跑</strong></td></tr>
+    <tr><td>审批没有应答方</td><td>以 <code>unavailable</code> <strong>关闭失败</strong></td></tr>
+    <tr><td>图片能力未证实</td><td>初始化时<strong>为 false</strong>，提示词准入时重查实时路由</td></tr>
+  </tbody>
+</table>
+
+<p>最后一条的官方论证特别典型：</p>
+
+<blockquote>
+  <p>
+    <strong>「只要 ACP SDK 具有图片块就公布图片支持」——不予采用，因为协议词汇不能证明当前部署可以持久化字节，也不能证明配置的确切路由接受视觉输入。</strong>
+  </p>
+</blockquote>
+
+<p>
+  <strong>「结构上有字段」≠「部署上真能做到」。</strong> 这个区分很多系统都没做。
+</p>
+
+<h3>并发写入：乐观并发控制</h3>
+
+<pre><code><span class="k">export type</span> FsWriteIntent =
+  | { kind: <span class="s">'createIfAbsent'</span> }
+  | { kind: <span class="s">'replaceIfVersion'</span>; version: FsVersion }</code></pre>
+
+<p>
+  配合 <code>fs-observation-policy</code> 的<strong>先读后编辑</strong>强制：模型读过文件才能改，读后被外部改过就不能盲写。防的是<strong>基于过期读改写、静默覆盖别人的修改</strong>——一类很常见的 Agent 事故。
+</p>
+
+<h2>六、PTC / Code Mode：工具面的第二种表示</h2>
+
+<p>
+  配置 <code>tools: mode: native | code | both</code>。code 模式下，工具注册表<strong>只贡献一个 <code>run_code</code> 入口</strong>加一份生成的 TypeScript SDK；直接调其它工具名会得到 <code>UNKNOWN_TOOL</code>。
+</p>
+
+<p>收益不在「少几次往返」，而在<strong>中间状态的存放位置变了</strong>：</p>
+
+<blockquote>
+  <p>
+    程序里的中间结果只是 worker 里的局部变量，<strong>从头到尾不进对话历史</strong>；只有程序跑完后的最终结果回到模型上下文。
+  </p>
+</blockquote>
+
+<p>
+  对长上下文项目，这是从「每一步的输入输出都在上下文里进出一次」变成「只付最终结果」——从结构上压掉了累积成本（见<a href="model-cost-quick-ref.html">模型与成本速查</a>）。
+</p>
+
+<p>治理没有被绕过，且边界写得很明白：</p>
+
+<ul>
+  <li>每个 SDK 子调用仍进调度池，仍产生 <code>tool/code-dispatch</code> 事件对</li>
+  <li>每次运行新建 Node worker thread、空环境变量、堆/输出/时间上限、硬终止</li>
+  <li><strong>信任等级官方明确声明为「与 bash 等同」</strong>——不夸大隔离能力</li>
+</ul>
+
+<h2>附带：配置分层与离线审计</h2>
+
+<pre><code>1. dsh.profile.bundles 列出的各 bundle patch（按列表顺序，base 在前）
+2. profile 自己的 cordis.patch.yml
+3. $DSH_HOME/cordis.patch.yml（机器本地共享偏好）
+4. 每个 --patch &lt;path&gt; overlay（按 argv 顺序）</code></pre>
+
+<p>
+  <strong>后者胜；且 patch 整体替换目标行的 <code>config</code>，不是深度合并。</strong>
+</p>
+
+<p>
+  <code>--dump-config</code> 不启动运行时，用 include 插件自己的 patch 算法<strong>离线组合各层</strong>，渲染成 YAML 打印退出。意义是：<strong>配置审计不依赖「跑起来再观察」</strong>，启动前就能拿到全貌。
+</p>
+
+<p>
+  配套的配置纪律：<strong>凡是不同部署可能取不同值的参数，都必须定义成配置字段</strong>；配置错误要在加载时<strong>响亮失败</strong>，不要静默兜底。
+</p>
+
+<h2>如果只记三条</h2>
+
+<ol>
+  <li><strong>扩展契约必须挂在抽象服务上，不能挂在实现包上</strong>——否则「可替换」是假的。</li>
+  <li><strong>给每个能力明确标 seam 还是 core</strong>，并想清楚「哪两个组件绝不能各说各话」（如 bash 与 fs 不能各自持有沙箱根目录）。</li>
+  <li><strong>可审计性要做成运行时断言，不是日志习惯</strong>；同时清楚它只保证一致、不保证正确。</li>
+</ol>
+
+<h2>模式 → 防的故障 对照表</h2>
+
+<table>
+  <thead>
+    <tr><th>模式</th><th>防的是什么</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>自由度分布 + 契约挂抽象层</td><td>换核心时扩展碎掉</td></tr>
+    <tr><td>可逆副作用 + 依赖即顺序</td><td>热重载后残留半激活服务</td></tr>
+    <tr><td>seam / core 分类 + 单一策略所有者</td><td>两条执行路径围栏宽度不一致</td></tr>
+    <tr><td>策略与执行分离</td><td>策略散落在 N 个工具里，改一处要动 N 处</td></tr>
+    <tr><td>事件溯源 + 运行时不变量</td><td>UI/回放/实际请求三者漂移</td></tr>
+    <tr><td>fail-closed</td><td>安全组件缺失时静默降级成不安全</td></tr>
+    <tr><td>乐观并发 + 先读后编辑</td><td>基于过期读改写，覆盖别人的修改</td></tr>
+    <tr><td>Code Mode</td><td>中间状态反复进出上下文，累积烧 token</td></tr>
+  </tbody>
+</table>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>来源</h4>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/cordis-primer" target="_blank">官方参考 · Cordis 入门</a> — 五核心概念、五种分发模式</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/capability-seams" target="_blank">官方参考 · 能力 Seams 与核心服务</a> — 逐服务 seam/core 分类表</p>
+    <p><a href="https://deepseek-harness.github.io/deepseek-harness/reference/tool-execution-pipeline" target="_blank">官方参考 · 工具执行流水线</a></p>
+    <p><a href="https://cloud.tencent.com.cn/developer/article/2735518" target="_blank">术哥：被骂毛坯、被捧成 Agent OS，DSH 到底是什么</a> — 源码级对读（invariant、SurfaceOp、Fiber 六态）</p>
+  </section>
+  <section>
+    <h4>相关课程与参考</h4>
+    <p><a href="../lessons/0001-what-is-deepseek-harness.html">第 1 课 · DSH 是什么？</a>（一切皆插件）</p>
+    <p><a href="../lessons/0006-models-cost-and-graduation.html">第 6 课 · 模型、成本与毕业</a>（能力三层拆分）</p>
+    <p><a href="cordis-glossary.html">Cordis 术语表</a> · <a href="harness-comparison.html">Harness 选型对比</a></p>
+  </section>
+</footer>
+
+</body>
+</html>

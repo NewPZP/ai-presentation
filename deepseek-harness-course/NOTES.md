@@ -33,8 +33,15 @@
 - 第 5 课（插件骨架 + defineTool + 加载 + 打包 + 三层验证）✅
 - 第 6 课（模型切换 + 成本控制 + 能力三层拆分 + 毕业收尾）✅
 
-课程结构：6 课 + 5 份参考文档（cordis-glossary / plugins-quick-ref / sandbox-trajectory-quick-ref / tool-plugin-dev-quick-ref / model-cost-quick-ref）。
+课程结构：6 课 + **7 份参考文档**（cordis-glossary / plugins-quick-ref / sandbox-trajectory-quick-ref / tool-plugin-dev-quick-ref / model-cost-quick-ref / architecture-patterns / harness-comparison）。
 **后续 session 方向**：不再加课。用户该拿真实项目练手；若回来提问，优先按 Gaps 里的「MCP 集成」「多 Agent 协作」或具体踩坑切入。
+
+## 延伸参考文档（应学员追问补充，2026-09）
+- `reference/architecture-patterns.html` — DSH 六大架构思想（自由度分布 / 可逆副作用 / seam-core 分类 / 策略执行分离 / 事件溯源+不变量 / fail-closed）+ PTC + 配置分层。每条附「防的是什么故障」。**这是不会过期的内容**（对比「行业标准前景」那类判断，三个月就得重写）。
+- `reference/harness-comparison.html` — Harness 选型：四种哲学（DSH/Claude Code+Hermes/Pi）、全景表、**Pi vs DSH 逐维对比**、同模型实测数据（OpenCode/pi/DSH，含首请求与总输入 token）、模型×harness 适配（Terminal-Bench 6 点差）、Anthropic vs OpenAI 订阅政策、Pi 的供应链硬化清单。
+- **关键事实**：DSH 的多供应商层 `dsh-llm-pi-ai` **依赖 Pi 仓库的 `@earendil-works/pi-ai`**——两者不是纯竞争，DSH 底层用了 Pi 的零件。这解释了为什么配置键叫 `llm-pi-ai`、`api: openai-completions` 与 Pi 同构。
+- **Pi 定位**：Mario Zechner（libGDX 作者）2025 年发布，MIT，**只有 4 个工具**（read/write/edit/bash），刻意不做 MCP/子代理/plan mode/**权限系统**/TODO/background bash；~91.6k 星是**一年有机增长**。DSH 是两天暴涨 95k。曲线形状不同，信号不同。
+- **成本对比硬数据**（同模型 DeepSeek V4 Flash）：首个请求输入 token **Pi 1,744 vs DSH 7,626 vs OpenCode 8,084**；总输入 token Pi 19,899 vs DSH 148,638 vs OpenCode 238,856。**Pi 的省 token 是结构性的，不是优化出来的。**
 
 ## 关键事实（第 6 课沉淀）
 - 换模型三层：改 Settings（99%）→ 改 cordis.yml 的 `provider`/`model` → 继承 `LlmAdapter` 实现 `stream()` 并 `ctx.llm.registerAdapter(providers, adapter)`

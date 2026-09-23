@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · RAG 面试冲刺全课程地图</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">全课程地图</h1>
+  <p class="lesson-meta">四个阶段 · 14 节课 · 按面试轮次挑重点 · 打印友好</p>
+</header>
+
+<main>
+
+<blockquote>
+  <p>
+    这张图的用法：不要按顺序从头学到尾就完事。先看清<strong>面试从哪几轮考你</strong>，
+    再决定这个阶段该把力气花在哪几课。课程编号是学习顺序，不是重要性排序。
+  </p>
+</blockquote>
+
+<h2>四个阶段</h2>
+
+<h3>阶段一 · 建立面试框架</h3>
+
+<p>把一条直线的朴素 RAG，升级成每个环节都有选型理由和代价的流水线。这一阶段决定你后面所有回答的结构。</p>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>标题</th><th>它回答的面试问题</th><th>岗位</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>01</td>
+      <td><a href="../lessons/0001-rag-interview-battle-map.html">RAG 面试作战地图</a></td>
+      <td>「介绍一下 RAG 的流程」——以及你会在哪五处被切开</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>02</td>
+      <td><a href="../lessons/0002-chunking-and-indexing.html">切分与索引</a></td>
+      <td>「chunk 多大合适」——为什么切分错了后面全白搭</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>03</td>
+      <td><a href="../lessons/0003-retrieval-and-fusion.html">检索与查询改写</a></td>
+      <td>「为什么不用纯向量」——BM25、混合检索、RRF 融合</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>04</td>
+      <td><a href="../lessons/0004-reranking-and-two-stage.html">重排与两段式检索</a></td>
+      <td>「召回里有正确答案为什么还答错」——双塔与交叉编码器</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>阶段二 · 把「我觉得」换成数字</h3>
+
+<p>这一阶段是应用岗的分水岭。没有它，你讲的所有优化都只是主观印象；有了它，你敢说自己做过。</p>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>标题</th><th>它回答的面试问题</th><th>岗位</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>05</td>
+      <td>检索评测与手撕指标 <em>(未生成)</em></td>
+      <td>「你怎么证明改好了」——Recall@k / MRR / nDCG 与评测脚本</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>06</td>
+      <td>生成评测与拒答 <em>(未生成)</em></td>
+      <td>「模型胡说怎么办」——忠实度、答案相关性、拒答率</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>07</td>
+      <td>故障归因树 <em>(未生成)</em></td>
+      <td>「线上答不准，你怎么排查」——从症状倒推环节</td>
+      <td><span class="qbadge app">app</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>阶段三 · 算法岗原理</h3>
+
+<p>这一阶段是算法岗的分水岭。应用岗可以只记结论（「HNSW 快是因为近似」），算法岗必须能推到原理和代价。</p>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>标题</th><th>它回答的面试问题</th><th>岗位</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>08</td>
+      <td>Embedding 是怎么训出来的 <em>(未生成)</em></td>
+      <td>「对比学习的损失怎么写」——in-batch negatives 与难负样本</td>
+      <td><span class="qbadge algo">algo</span></td>
+    </tr>
+    <tr>
+      <td>09</td>
+      <td>Reranker 为什么更强 <em>(未生成)</em></td>
+      <td>「双塔和交叉编码器的本质差异」——注意力在哪一层交互</td>
+      <td><span class="qbadge algo">algo</span></td>
+    </tr>
+    <tr>
+      <td>10</td>
+      <td>向量索引原理 <em>(未生成)</em></td>
+      <td>「一亿条向量怎么做到毫秒级」——HNSW / IVF / PQ 的取舍</td>
+      <td><span class="qbadge algo">algo</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h3>阶段四 · 系统设计与项目</h3>
+
+<p>这一阶段产出你在「项目深挖」轮次里唯一的弹药。没有它，前三个阶段的知识都只是别人的故事。</p>
+
+<table>
+  <thead>
+    <tr><th>课</th><th>标题</th><th>它回答的面试问题</th><th>岗位</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>11</td>
+      <td>白板设计：企业知识库问答 <em>(未生成)</em></td>
+      <td>「给你 15 分钟设计一个企业知识库」——权限、增量、成本</td>
+      <td><span class="qbadge app">app</span></td>
+    </tr>
+    <tr>
+      <td>12</td>
+      <td>高级 RAG 的取舍 <em>(未生成)</em></td>
+      <td>「你知道 Self-RAG / GraphRAG 吗」——什么时候不值得用</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>13</td>
+      <td>项目实战：真实语料 <em>(未生成)</em></td>
+      <td>「讲讲你做过的 RAG 项目」——指标、取舍、失败</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+    <tr>
+      <td>14</td>
+      <td>项目复盘与追问模拟 <em>(未生成)</em></td>
+      <td>面试官连环追问时，怎么把自己的项目讲成故事</td>
+      <td><span class="qbadge both">both</span></td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>三条路线：时间不够时怎么砍</h2>
+
+<p>课程完整是 14 课。真实情况是时间总不够，所以要提前定好砍的顺序。</p>
+
+<table>
+  <thead>
+    <tr><th>你的处境</th><th>路线</th><th>放弃什么</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>只剩 1–2 周</td>
+      <td>1 → 2 → 3 → 4 → 5 → 11</td>
+      <td>算法岗原理全部、生成评测细节、高级 RAG。只求「结构清楚 + 会说取舍 + 有指标」。</td>
+    </tr>
+    <tr>
+      <td>主打应用岗</td>
+      <td>1–7 + 11–14，第 8/9/10 课只记结论</td>
+      <td>对比学习损失推导、索引结构的数学细节。被追问时能说出结论和代价即可。</td>
+    </tr>
+    <tr>
+      <td>主打算法岗</td>
+      <td>1–10 + 12 + 13，第 11 课只读不练</td>
+      <td>多租户权限、成本核算这类工程细节。白板设计能画出来即可，不必抠运营。</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>每课的固定动作</h2>
+
+<p>知识看一遍会忘，这是生理事实，不是你不努力。所以每节课后固定做三件事，把「看懂」变成「记得住」：</p>
+
+<ol>
+  <li><strong>当天：录一段 90 秒</strong>。合上课程页面，把这一课的核心讲一遍并录音。卡住的地方就是没懂的地方。</li>
+  <li><strong>当天：做三道自测</strong>。答错不要紧，重点是答错后立刻看解释——这个即时反馈就是学习本身。</li>
+  <li><strong>一周后：只再做一次自测</strong>。这一遍才是真正决定你面试时想不想得起来的。忘了就说明需要二刷。</li>
+</ol>
+
+<div class="docnav">
+  <h5>相关</h5>
+  <ul>
+    <li><a href="../lessons/0001-rag-interview-battle-map.html">第 1 课 · RAG 面试作战地图</a></li>
+    <li><a href="../GLOSSARY.md">RAG 面试 Glossary</a></li>
+    <li><a href="../RESOURCES.md">RESOURCES.md</a> — 本课程信任的全部一手资料</li>
+    <li><a href="../MISSION.md">MISSION.md</a> — 这门课为什么存在</li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>怎么用这份地图</h4>
+    <p>面试前几天回来看「三条路线」，重新确认自己的取舍还成立。目标变了，砍的顺序就该跟着变。</p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>课程顺序或难度不合适，直接跟我说——我是你的老师，可以按你的面试时间重排。</p>
+  </section>
+</footer>
+
+</body>
+</html>

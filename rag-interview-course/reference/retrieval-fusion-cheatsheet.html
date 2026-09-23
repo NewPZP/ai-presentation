@@ -1,0 +1,316 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>参考 · 检索与融合速查</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">参考文档 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">检索与融合速查</h1>
+  <p class="lesson-meta">BM25 参数 · RRF 手算 · 两派融合的取舍 · 调参顺序 · 打印友好</p>
+</header>
+
+<main>
+
+<blockquote>
+  <p>
+    <strong>一句话记住两派的分野：</strong>RRF 只看「你排第几」，按分数融合还看「你赢了多少」。
+    RRF 更稳健、不用调参；按分数融合保留更多信息，但也把分数分布本身的不可靠一起放大。
+  </p>
+</blockquote>
+
+<h2>两种检索的盲区是对称的</h2>
+
+<table>
+  <thead>
+    <tr><th></th><th>稠密（向量）</th><th>稀疏（BM25）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>擅长</strong></td><td>语义相近、同义改写、口语 query</td><td>精确词项、型号、错误码、人名、条款号</td></tr>
+    <tr><td><strong>盲区</strong></td><td>低频精确串（在向量空间几乎无区分度）</td><td>词形与词义（<code>molding</code> vs <code>mold</code> 分不清）</td></tr>
+    <tr><td><strong>推理开销</strong></td><td>需要 embedding 模型</td><td><strong>无模型推理</strong>，索引期与在线都极便宜</td></tr>
+  </tbody>
+</table>
+
+<p><strong>Qdrant 的实例</strong>（同一查询，两种检索谁把相关商品排第一）：</p>
+
+<table>
+  <thead>
+    <tr><th>查询</th><th>稠密排第一</th><th>稀疏排第一</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>french molding</code></td><td>装饰线条 <strong>相关</strong></td><td>法式面包模具 <em>不相关</em></td></tr>
+    <tr><td><code>bathroom vanity knobs</code></td><td>整体浴室柜 <em>不相关</em></td><td>旋钮单品 <strong>相关</strong></td></tr>
+  </tbody>
+</table>
+
+<p>检索失败是<strong>静默</strong>的——Qdrant 原话：无论哪种检索失败，「你的日志都会记下一次成功的查询」。</p>
+
+<h2>BM25 公式与参数</h2>
+
+<pre><code>              ⎛ N ⎞   (k₁ + 1) · tf(t,d)
+score(d, q) = Σ log│───│ · ─────────────────────────────
+              ⎝df_t⎠   k₁·((1 - b) + b · L_d / L_avg) + tf(t,d)</code></pre>
+
+<table>
+  <thead>
+    <tr><th>项</th><th>作用</th><th>参数语义</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><code>log(N/df_t)</code></td><td>IDF：稀有词更值钱</td><td>精细变体 <code>log((N-df_t+0.5)/(df_t+0.5))</code> 在词出现于过半文档时会变负，需加 0 下限</td></tr>
+    <tr><td><code>tf(t,d)</code></td><td>词频，<strong>带饱和</strong>（收益递减）</td><td><code>k₁=0</code> 退化为二值模型；<code>k₁</code> 很大 ≈ 用原始词频。<strong>默认 1.2–2</strong></td></tr>
+    <tr><td><code>L_d/L_avg</code></td><td>文档长度归一化</td><td><code>b=1</code> 完全归一化；<code>b=0</code> 不归一化。<strong>默认 0.75</strong></td></tr>
+  </tbody>
+</table>
+
+<p>
+  默认值来自 Stanford IR 教材在没有做参数优化时的推荐。规范做法是在开发集上网格搜索——
+  和 chunk size 同理：<strong>可调的参数都应该被测量，而不是被继承</strong>。
+</p>
+
+<p>
+  <strong>学习式稀疏检索</strong>：SPLADE 会补上原文没出现的相关词（召回同义词）；
+  miniCOIL 保留词项匹配但按上下文重新加权（体育的 <code>bat</code> ≠ 动物的 <code>bat</code>）。
+  Qdrant 的建议：<strong>先用 BM25，再用学习式模型跟它比，比过了才换。</strong>
+</p>
+
+<h2>融合的核心难题：量纲</h2>
+
+<div class="callout">
+  <p>
+    余弦相似度<strong>有界</strong>（大致 0–1），BM25 的<strong>量纲随查询漂移</strong>——
+    取决于命中了几个查询词、这些词多稀有。
+    所以<strong>没有任何一组固定权重能对所有查询保持同样的平衡</strong>：一个权重在查询 A 上刚好，在查询 B 上就让 BM25 一边倒。
+  </p>
+</div>
+
+<h2>RRF：只用名次</h2>
+
+<pre><code>RRF(d) = Σ        1 / (k + r(d))          k = 60
+         r ∈ R</code></pre>
+
+<p>
+  <code>r(d)</code> 是文档在第 <code>r</code> 路结果里的名次（<strong>原始论文用 1 起始名次</strong>）。
+  公式里<strong>没有分数</strong>——所以能把「余弦 0.7」和「BM25 12.4」放在一起融合，因为从不需要比较这两个值。
+</p>
+
+<p>
+  <strong><code>k=60</code> 的出处与意图</strong>（Cormack et al., SIGIR 2009 原文）：
+  <code>k=60</code> 在一次先导实验中固定，之后验证未改动。
+  直觉是「高度靠前的文档更重要，但靠后文档的重要性不应像指数函数那样迅速消失；
+  常数 <code>k</code> 用来<strong>缓和异常系统给出的高排名所带来的影响</strong>」。
+</p>
+
+<h3>手算范例（可直接背下来讲）</h3>
+
+<p>
+  稠密余弦 <code>D3 .82 / D1 .79 / D7 .78 / D2 .77 / D9 .76</code>；
+  稀疏 BM25 <code>D5 18.4 / D3 12.1 / D2 9.7 / D8 4.2 / D1 3.9</code>。
+</p>
+
+<table>
+  <thead>
+    <tr><th>文档</th><th>稠密名次</th><th>稀疏名次</th><th>RRF(k=60)</th><th>RRF 排名</th><th>DBSF 得分</th><th>DBSF 排名</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>D3</td><td>#1</td><td>#2</td><td>0.03252</td><td>1</td><td>1.566</td><td>1</td></tr>
+    <tr><td>D1</td><td>#2</td><td>#5</td><td>0.03151</td><td>2</td><td>0.500</td><td>4</td></tr>
+    <tr><td>D2</td><td>#4</td><td>#3</td><td>0.03150</td><td>3</td><td>0.567</td><td>3</td></tr>
+    <tr><td>D5</td><td>—</td><td><strong>#1</strong></td><td>0.01639</td><td><strong>4</strong></td><td>1.000</td><td><strong>2</strong></td></tr>
+    <tr><td>D7</td><td>#3</td><td>—</td><td>0.01587</td><td>5</td><td>0.333</td><td>5</td></tr>
+    <tr><td>D8</td><td>—</td><td>#4</td><td>0.01562</td><td>6</td><td>0.021</td><td>6</td></tr>
+    <tr><td>D9</td><td>#5</td><td>—</td><td>0.01538</td><td>7</td><td>0.000</td><td>7</td></tr>
+  </tbody>
+</table>
+
+<h3>从这个例子要记住的两件事</h3>
+
+<ol>
+  <li><strong>RRF 是共识机制，奖励「都认可」、惩罚「一枝独秀」。</strong>
+    D5 是稀疏第 1（两路里唯一的榜首），却排第 4，输给两边中游的 D2。
+    因为 <code>k=60</code> 把名次差距压平了：第 1 名 <code>1/61</code> 与第 5 名 <code>1/65</code> 只差约 6%。</li>
+  <li><strong>加权重是钝器，救不了「一枝独秀」。</strong>
+    稀疏权重加到 3 倍、10 倍，D5 都还在第 4 位；要到<strong>约 16 倍</strong>才超过 D1——
+    而那时排序已被稀疏一路主导。原因：加大某一路权重会同时抬高这一路的所有文档，包括你不想抬的那个。</li>
+</ol>
+
+<p>
+  <strong>换派别才是有效杠杆</strong>：同一组分数交给按分数融合，D5 直接升到第 2 名，零权重调参。
+</p>
+
+<h2>两派融合对照</h2>
+
+<table>
+  <thead>
+    <tr><th></th><th>按名次（RRF / rankedFusion）</th><th>按分数（DBSF / relativeScoreFusion）</th></tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>做法</strong></td><td><code>1/(k + rank)</code>，两路相加</td><td>按查询把每路归一化（最高→1、最低→0），再按 <code>alpha</code> 加权相加</td></tr>
+    <tr><td><strong>优势</strong></td><td>对量纲免疫，几乎不用调参，行为稳健</td><td>保留分数差距，单路的压倒性领先能被看见</td></tr>
+    <tr><td><strong>风险</strong></td><td>丢掉「赢多少」，会埋掉单路独占命中的文档</td><td>依赖分数分布，会把分布本身的不可靠一起放大</td></tr>
+    <tr><td><strong>调参</strong></td><td><code>k</code>（钝器）、各路权重（钝器）</td><td><code>alpha</code>（偏向关键词或向量）</td></tr>
+  </tbody>
+</table>
+
+<p>
+  Weaviate 在 1.24 把默认从 <code>rankedFusion</code> 换为 <code>relativeScoreFusion</code>，
+  理由是内部基准（FIQA）召回提升约 6%。<strong>厂商内部基准、非第三方复现——引用时请带上这句。</strong>
+</p>
+
+<p>
+  调小 <code>k</code> 的效果（同一组例子）：<code>k=1</code> 时 D5 从 0.01639 涨到 0.50，超过两边中游的 D2（0.45）；
+  但同一设定下 <strong>D1 与 D5 正好打平在 0.50</strong>，谁在前面完全取决于兜底排序规则。
+</p>
+
+<h2>硬边界：融合不能创造候选</h2>
+
+<div class="callout">
+  <p>
+    <strong>融合只做重排，作用在两路候选的并集上。</strong>
+    两路都没找到的文档，<strong>不可能出现在结果的任何位置</strong>——换任何融合算法都一样。
+  </p>
+  <p>
+    这时该动的是<strong>候选深度</strong>（prefetch 的 limit），不是融合方法。
+    但加深也有代价：检索量变大；且若两路在更深处依然找不到它，加深也没用。
+  </p>
+</div>
+
+<p>
+  排查顺序因此永远是：<strong>① 候选集里有没有它 → ② 排序对不对</strong>。
+  这个顺序就是第 5 课评测与归因的基本框架。
+</p>
+
+<h2>混合检索的代价清单（面试必答的另一半）</h2>
+
+<ul>
+  <li><strong>存储与索引</strong>：每文档多存一个稀疏向量，多建一个索引，每查询多跑一路检索。</li>
+  <li><strong>延迟</strong>：Qdrant 测得中位延迟增加 <strong>0.60–1.47 ms</strong>（单容器、单请求、无并发）。
+    <strong>必须在自己的并发与分片条件下重测</strong>，别把这个数字直接搬进容量规划。</li>
+  <li><strong>改造代价</strong>：给已运行的纯稠密库加稀疏向量，<strong>必须新建 collection 并全量重建</strong>（向量配置在创建时固定）。</li>
+  <li><strong>易漏的坑</strong>：稀疏向量要开 <strong>IDF 修饰</strong>。
+    Qdrant 原话：没有它，<strong>一个常见词可能和一个零件编号得到同样的权重</strong>。</li>
+</ul>
+
+<h3>收益不是普适的（Qdrant，nDCG@10）</h3>
+
+<table>
+  <thead>
+    <tr><th>数据集</th><th>纯稠密</th><th>纯稀疏</th><th>RRF 融合</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>SciFact</td><td>0.6239</td><td>0.6886</td><td><strong>0.7175</strong></td></tr>
+    <tr><td>ArguAna</td><td>0.4905</td><td>0.4224</td><td><strong>0.5216</strong></td></tr>
+    <tr><td>WANDS</td><td>0.6921</td><td>0.7098</td><td><strong>0.7254</strong></td></tr>
+    <tr><td>CodeSearchNet</td><td>0.6299</td><td>0.5126</td><td><strong>0.6555</strong></td></tr>
+    <tr><td>DBPedia-entity</td><td><strong>0.4677</strong></td><td>0.3857</td><td>0.4638</td></tr>
+  </tbody>
+</table>
+
+<p>
+  5 个数据集赢 4 个，<strong>但 DBPedia-entity 输给了纯稠密</strong>。这个反例证明收益依赖数据分布。
+  正确表述是「<strong>在这类查询上更好，我会用自己的带标注查询集验证</strong>」，而不是「混合检索更好」。
+</p>
+
+<h2>调参顺序（照这个顺序试，别乱）</h2>
+
+<ol>
+  <li><strong>先建基线</strong>：纯稠密、纯稀疏各跑一遍，用同一批标注查询、同一套候选深度。</li>
+  <li><strong>再上融合</strong>：默认先用 RRF，看它是否<strong>同时</strong>赢过两路。若只赢一路，先查候选深度。</li>
+  <li><strong>看分歧查询</strong>：重点看两路排序不一致的那些 query，判断胜负是否集中在某一类查询上。</li>
+  <li><strong>换派别</strong>：出现「单路独占命中被埋掉」时，试按分数融合，而不是猛调权重。</li>
+  <li><strong>最后才调参数</strong>：<code>k</code>、权重、<code>alpha</code>。每次只动一个。</li>
+  <li><strong>留出集复验</strong>：在 held-out 查询上复查胜出的配置，否则你只是过拟合了调参集。</li>
+</ol>
+
+<h2>查询改写</h2>
+
+<table>
+  <thead>
+    <tr><th>做法</th><th>机制</th><th>代价 / 风险</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>多路查询</strong></td>
+      <td>LLM 改写成若干不同角度的查询，各自检索后融合</td>
+      <td>检索次数 ×N，外加一次 LLM 调用</td>
+    </tr>
+    <tr>
+      <td><strong>HyDE</strong></td>
+      <td>先让 LLM 生成假想答案文档，用<strong>它</strong>去检索（答案的写法天然比问题更像文档；假细节被编码器稠密瓶颈过滤）</td>
+      <td>Anthropic 报告同类思路<strong>收益有限</strong>。表述要平衡：有依据，但依赖场景，先量再上</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>反向考点：查询改写也会帮倒忙。</strong>
+  如果 query 本身是精确型号或错误码，改写可能把它「顺滑」成语义相近但丢掉关键串的句子，
+  本来 BM25 能一击命中的反而查不到。<strong>知道什么时候不该改写，和知道怎么写，是同一件事的两面。</strong>
+</p>
+
+<h2>融合代码的不变量断言</h2>
+
+<pre><code><span class="c"># ① 名次基准要明确（论文用 1 起始；0 起始不改变通常排序，但必须自知）</span>
+rank = i + 1
+
+<span class="c"># ② 分数打平必须显式定序，否则同一查询两次跑出不同结果，指标会莫名抖动</span>
+<span class="k">return</span> sorted(scores.items(), key=<span class="k">lambda</span> kv: (-kv[1], str(kv[0])))
+
+<span class="c"># ③ 融合结果必须是两路并集的子集——越界说明你创造了候选</span>
+<span class="k">assert</span> set(d <span class="k">for</span> d, _ <span class="k">in</span> fused) &lt;= set(dense) | set(sparse)</code></pre>
+
+<h2>故障 → 药方</h2>
+
+<div class="failmode">
+  <div class="failmode-row">
+    <div class="failmode-sym">冷门型号 / 错误码搜不到</div>
+    <div class="failmode-fix">加稀疏这一路（BM25），并<strong>确认开了 IDF 修饰</strong>。这是混合检索最典型的收益场景。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">上了混合检索，某类查询反而变差</div>
+    <div class="failmode-fix">大概率是 RRF 埋掉了「单路独占命中」。试按分数融合，或检查该类查询是否本就不该走混合。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">两路都召回不到那篇文档</div>
+    <div class="failmode-fix"><strong>融合救不了。</strong>加大候选深度；仍不行则回去查切分与解析（第 2 课）。</div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">同一查询两次结果不一致</div>
+    <div class="failmode-fix">分数打平后依赖了字典序。给排序加稳定的兜底键。<strong>这类问题会让评测指标抖动，最难查。</strong></div>
+  </div>
+  <div class="failmode-row">
+    <div class="failmode-sym">调权重怎么调都没起色</div>
+    <div class="failmode-fix">权重是钝器，会同时抬高整路文档。先确认你要修的是「排序」还是「候选缺失」——
+      <strong>候选缺失调权重永远无效</strong>。</div>
+  </div>
+</div>
+
+<div class="docnav">
+  <h5>相关</h5>
+  <ul>
+    <li><a href="../lessons/0003-retrieval-and-fusion.html">第 3 课 · 检索与查询改写</a></li>
+    <li><a href="chunking-cheatsheet.html">切分策略速查</a>（第 2 课）</li>
+    <li><a href="rag-roadmap.html">全课程地图</a></li>
+    <li><a href="../GLOSSARY.md">RAG 面试 Glossary</a></li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://qdrant.tech/articles/hybrid-search/" target="_blank">Qdrant: Hybrid Search</a> · <a href="https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html" target="_blank">Stanford IR Book · BM25</a> · <a href="https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf" target="_blank">Cormack et al. 2009 (RRF)</a> · <a href="https://weaviate.io/blog/hybrid-search-fusion-algorithms" target="_blank">Weaviate: Fusion Algorithms</a></p>
+  </section>
+  <section>
+    <h4>注意局限</h4>
+    <p>Qdrant 的延迟与 nDCG 数字、Weaviate 的 6% 召回提升均为<strong>厂商自测</strong>；Qdrant 延迟是在单容器单请求下测得。面试引用时请一并说明条件。</p>
+  </section>
+</footer>
+
+</body>
+</html>

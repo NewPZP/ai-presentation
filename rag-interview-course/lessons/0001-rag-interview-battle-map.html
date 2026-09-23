@@ -1,0 +1,281 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 1 课 · RAG 面试作战地图</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 1 课 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">RAG 面试作战地图</h1>
+  <p class="lesson-meta">一条主链路、五处失分点、一个 90 秒口播结构 · 约 15 分钟</p>
+</header>
+
+<main>
+
+<h2>你现在的 RAG，过不了面试</h2>
+
+<p>
+  你在 <a href="../../ai-agent-2.0/lessons/0011-rag-and-vector-memory.html">AI Agent 2.0 第 11 课</a>里已经跑通过一条 RAG：
+  切分文档 → 调 embedding → 用余弦相似度找最相近的几段 → 拼进提示词。代码能跑，答案也对。
+</p>
+
+<p>
+  但面试不考「你会不会跑」，考的是<strong>你为什么这么做、换个做法会怎样、你怎么知道现在这个更好</strong>。
+  你那条 demo 是一条直线，面试官会从直线的每个接缝处切开问你——而你现在一处都答不上来。
+</p>
+
+<div class="interviewer">
+  <p>「介绍一下 RAG 的流程。」</p>
+</div>
+
+<p>
+  这题 90% 的候选人会答成：<em>「把文档切块，向量化存到向量库；用户提问时把问题向量化，检索相似的块，拼到提示词里让模型回答。」</em>
+</p>
+
+<p>
+  这段回答的问题是：<strong>它把 RAG 说成了一个方法，而 RAG 其实是一条流水线。</strong>
+  面试官听到「方法」就会开始逐个零件地问你选型理由；听到「流水线」，他会顺着你的结构问下去，而结构是你定的。
+  这节课要给你的，就是那个结构。
+</p>
+
+<h2>一、先把主链路摆出来</h2>
+
+<p>
+  RAG 的第一性结构不是「切分→向量化→检索→生成」，而是<strong>两条链路的解耦</strong>：
+  文档进入系统时做的事，和用户提问时做的事，是分开的。
+</p>
+
+<div class="pipeline">
+  <div class="pipeline-band">
+    <h5>离线索引 · 文档变了才跑一次</h5>
+    <div class="pipeline-steps">
+      <div class="pipeline-step"><b>解析</b><span>PDF / HTML / 表格</span></div>
+      <div class="pipeline-step"><b>切分</b><span>大小与重叠</span></div>
+      <div class="pipeline-step"><b>向量化</b><span>embedding 模型</span></div>
+      <div class="pipeline-step"><b>入库</b><span>索引 + 元数据</span></div>
+    </div>
+  </div>
+  <div class="pipeline-band">
+    <h5>在线服务 · 每次提问都要跑</h5>
+    <div class="pipeline-steps">
+      <div class="pipeline-step"><b>查询改写</b><span>多路 / 消歧</span></div>
+      <div class="pipeline-step"><b>检索</b><span>向量 + BM25</span></div>
+      <div class="pipeline-step"><b>融合</b><span>RRF 排序</span></div>
+      <div class="pipeline-step"><b>重排</b><span>cross-encoder</span></div>
+      <div class="pipeline-step"><b>组装生成</b><span>引用与拒答</span></div>
+    </div>
+  </div>
+</div>
+
+<p>
+  这个划分本身就是得分点。它直接回答了三个面试官一定会问的问题：
+</p>
+
+<ul>
+  <li><strong>文档更新了要重跑什么？</strong>只重跑离线那条链路上受影响的部分，在线服务不动。</li>
+  <li><strong>延迟预算花在哪？</strong>在线链路是延迟敏感路径，离线链路可以慢、可以批处理、可以用大模型做增强。</li>
+  <li><strong>优化往哪下手？</strong>离线决定召回的<em>上限</em>（切分切坏了，后面再精排也救不回来），在线决定这份上限能兑现<em>多少</em>。</li>
+</ul>
+
+<h2>二、90 秒口播：五个节拍</h2>
+
+<p>
+  被要求「介绍一下 RAG」时，别背课文。按下面五个节拍说，每一拍都停一下看面试官反应——他会顺着最感兴趣的那一拍追问，
+  而那一拍就是你接下来十分钟的战场。
+</p>
+
+<div class="answer-card">
+  <h5>90 秒结构（照着说，不要背）</h5>
+  <ol>
+    <li><strong>定义 + 动机（10 秒）</strong>：RAG 不是让模型变聪明，是让模型看到它训练时没见过的知识，而且不用重训——
+      文档一变，重新索引就行。</li>
+    <li><strong>拆成两条链路（20 秒）</strong>：离线索引做解析、切分、向量化、入库；在线服务做查询改写、检索、融合、重排、组装生成。</li>
+    <li><strong>指出关键耦合（20 秒）</strong>：离线决定召回上限，在线决定兑现多少。所以我会先量召回，再谈生成。</li>
+    <li><strong>主动交代取舍（20 秒）</strong>：说一个你真实做过的选择，例如「切分我选了按标题结构切、块内保留标题路径，代价是块大小不均」。
+      <em>这一拍是分水岭——主动讲取舍的人，会被当成做过的人。</em></li>
+    <li><strong>落到评测（20 秒）</strong>：检索用 Recall@k 和 MRR，生成用忠实度与拒答率；不量化就没法证明改动有效。</li>
+  </ol>
+</div>
+
+<h2>三、五处失分点</h2>
+
+<p>
+  下面五处，是你那条直线最容易被切开的地方。每一处都配了面试官的真实问法和你该有的姿势。
+  后续课程会逐个把它们补成完整答案。
+</p>
+
+<h3>失分点 1：把 RAG 讲成一条直线</h3>
+
+<div class="interviewer">
+  <p>「你的文档每天更新，是不是每次都要把所有文档重新向量化一遍？」</p>
+</div>
+
+<p>
+  如果你脑子里只有一条线，你会答「是的」——然后开始解释怎么让它跑得快一点，越描越黑。
+  正确姿势是先说<strong>两条链路是解耦的</strong>：只有被改动的那批文档需要重跑解析、切分、向量化，索引是增量的；
+  在线服务一行代码都不用动。再补一句：如果换了 embedding 模型，那才必须全量重跑，因为新旧向量不在同一个空间里，不能混着比。
+</p>
+
+<h3>失分点 2：把「检索」等同于「向量检索」</h3>
+
+<div class="interviewer">
+  <p>「用户查的是产品型号 <code>XR-2400B</code>，你的向量检索为什么搜不出来？」</p>
+</div>
+
+<p>
+  这是朴素 RAG 最经典的翻车现场。向量检索擅长的是<strong>语义相近</strong>，不擅长<strong>精确匹配</strong>：
+  冷门型号、错误码、人名、法律条款号这类低频 token，在 embedding 空间里几乎没有区分度，反而会被语义上「像」的邻近词吸走。
+  正确姿势是<strong>混合检索</strong>：BM25 一路保精确匹配，向量一路保语义泛化，两路结果用 RRF 之类的排名融合算法合并。
+  这一处能答出「稀疏检索和稠密检索是互补而非替代」，应用岗这一轮就稳了一半。
+  更有说服力的是直接甩数据：<a href="https://www.anthropic.com/engineering/contextual-retrieval" target="_blank">Anthropic 的实测</a>中，
+  单用向量检索时 top-20 的检索失败率是 5.7%，加上 BM25 后降到 2.9%——<strong>这是别人量出来的，不是你的感觉</strong>。
+</p>
+
+<h3>失分点 3：根本没有重排这一环</h3>
+
+<div class="interviewer">
+  <p>「向量检索 top-20 里明明有正确答案，为什么模型还是答错了？」</p>
+</div>
+
+<p>
+  <strong>召回了，不等于用上了。</strong>向量检索用的是双塔结构——问题和文档分别编码，
+  两者在编码时没有见过对方，只能比「整体像不像」。而重排用的是 cross-encoder，把问题和候选文档拼在一起送进模型，
+  能做逐词的交叉注意，判断「这段到底能不能回答这个问题」。
+  代价是它慢得多，不能对全库跑，所以标准做法是<strong>两段式</strong>：向量检索粗召回几十条，cross-encoder 精排到 3–5 条再喂给 LLM。
+  Anthropic 那组实验里，在混合检索之上再加一层 rerank，失败率从 2.9% 继续压到 1.9%——<strong>收益是叠加的，不是二选一</strong>。
+</p>
+
+<h3>失分点 4：无法回答「你怎么知道改好了」</h3>
+
+<div class="interviewer">
+  <p>「你说你优化了检索，效果提升了——怎么证明？」</p>
+</div>
+
+<p>
+  这是最致命的一处，因为它决定面试官信不信你前面说的所有话。答「感觉回答更准了」等于承认没有工程能力。
+  正确姿势是分两层量化：<strong>检索层</strong>看 Recall@k（该被找到的有没有进候选）和 MRR / nDCG（排得够不够靠前）；
+  <strong>生成层</strong>看忠实度（答案是否只依据检索到的上下文）和拒答率（没检索到时会不会硬编）。
+  还要能说出一个细节：<strong>Recall@k 是重排的天花板</strong>——粗召回没进来的文档，重排再强也变不出来。
+</p>
+
+<h3>失分点 5：把向量库当成黑盒</h3>
+
+<div class="interviewer">
+  <p>「一亿条向量，你怎么做到几十毫秒内返回？」</p>
+</div>
+
+<p>
+  「向量数据库很快」不是答案。要能说出<strong>近似</strong>最近邻这个前提：
+  暴力比对是线性的，撑不住规模，所以索引结构用图或聚类把搜索范围压下来——HNSW 走的是分层可导航小图，IVF 先把向量聚成簇、只搜最近的几个簇，
+  PQ 再把向量压成短码以省内存。
+  <span class="qbadge algo">算法岗</span> 还要能说出代价：这些结构都是<strong>用召回率换速度</strong>，
+  参数调得越激进越快、也越容易漏掉真正的最近邻；<span class="qbadge app">应用岗</span> 至少要能说出「快是近似的代价换来的，参数需要按召回率调」。
+</p>
+
+<h2>四、自测：合上上文再答</h2>
+
+<p>下面三题不要往回翻。答错了不要紧，答错之后立刻看到解释，比答对更有用。</p>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 1 题</p>
+  <p class="quiz-question">下面哪一步属于离线索引链路？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。切分、向量化、入库都在文档进入系统时完成，文档不变就不重跑。">文档切分并入库</li>
+    <li data-why="不对。查询改写要看到用户的问题，只能在在线链路里做，每个问题都要跑一次。">查询改写成多条</li>
+    <li data-why="不对。重排要对本次检索出的候选打分，属于在线链路的延迟敏感路径。">候选结果再重排</li>
+    <li data-why="不对。组装上下文依赖本次检索结果，同样是每次提问才发生的事。">上下文拼进提示</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 2 题</p>
+  <p class="quiz-question">用户查一个冷门产品型号，纯向量检索最容易在哪吃亏？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。低频 token 在 embedding 空间里几乎没有区分度，会被语义相近的词吸走，这时需要 BM25 保精确匹配。">专有名词记不住</li>
+    <li data-why="不对。语义相近恰恰是向量检索的强项，它擅长的就是这个。">语义相近分不清</li>
+    <li data-why="不对。切分是索引阶段的问题，和「纯向量」这个选择没有直接关系。">长文档切不干净</li>
+    <li data-why="不对。维度高不等于能区分低频词，加维度并不解决精确匹配问题。">向量维度不够高</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 3 题</p>
+  <p class="quiz-question">哪一项不能作为「RAG 变好了」的证据？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。这是主观印象，不是指标。面试里说出这句，前面所有优化都会被重新怀疑。">回答读起来更通顺</li>
+    <li data-why="不对。这是检索层指标，能直接证明该被找到的文档更多进了候选集，属于有效证据。">召回率提升了十点</li>
+    <li data-why="不对。MRR / 排序位置是检索层指标，衡量正确答案排得够不够靠前，属于有效证据。">重排后排序更靠前</li>
+    <li data-why="不对。引用命中率衡量答案有没有落在检索到的内容上，是生成层的有效证据。">引用命中率提高了</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score-note" data-quiz-score></p>
+
+<h2>五、真练一次：录一段 90 秒</h2>
+
+<p>
+  读到这里你已经有了结构，但<strong>看懂结构不等于能说出来</strong>。面试是口头检索，必须练口头检索。
+  现在打开手机录音，别打草稿，按五个节拍说 90 秒，然后把录音放给自己听一遍——你会立刻听出哪一拍卡住了。
+</p>
+
+<details class="drill">
+  <summary>先说，再展开对照范文</summary>
+  <div class="drill-body">
+    <p>
+      「RAG 解决的是模型看不到私有知识的问题——它不改模型，而是让模型在回答前先看到相关材料。
+      结构上我会拆成两条链路：离线索引负责把文档解析、切分、向量化并入库；在线服务负责查询改写、检索、融合、重排、组装上下文再生成。
+      这两条链路的耦合点在于，离线决定召回的上限，在线决定这份上限能兑现多少，所以优化时我会先量召回、再动生成。
+      具体到我的做法，检索上我用的是向量加 BM25 的混合检索再 RRF 融合，因为纯向量对型号、错误码这种精确串不敏感；切分上按标题结构走，块内保留标题路径做上下文，代价是块大小不均、需要额外处理超长块。
+      评测分两层：检索层看 Recall@k 和 MRR，生成层看忠实度和拒答率。评价一个改动是否有用，我会先看 Recall@k 有没有动——因为它是重排的天花板。」
+    </p>
+    <p>
+      <strong>自检三问</strong>：① 我有没有说出「两条链路」而不是一条直线？② 我有没有主动讲一个取舍？
+      ③ 我有没有落到具体指标？三个都有，这段就成了。
+    </p>
+  </div>
+</details>
+
+<h2>六、本课要带走的三句话</h2>
+
+<ol>
+  <li><strong>RAG 是两条链路，不是一条直线。</strong>离线索引决定召回上限，在线服务决定兑现多少。</li>
+  <li><strong>主动讲取舍，比记住更多名词值钱。</strong>面试官分不清「做过」和「读过」时，取舍是唯一的区分信号。</li>
+  <li><strong>没有指标就没有优化。</strong>Recall@k 是重排的天花板，这句话能救回一整轮面试。</li>
+</ol>
+
+<div class="docnav">
+  <h5>本课程的参考文档</h5>
+  <ul>
+    <li><a href="../reference/rag-roadmap.html">RAG 面试冲刺 · 全课程地图</a> — 四个阶段、14 节课、按岗位挑重点</li>
+    <li><a href="../GLOSSARY.md">RAG 面试 Glossary</a> — 本工作区的权威用词，所有课程都遵循</li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://arxiv.org/abs/2005.11401" target="_blank">Retrieval-Augmented Generation for Knowledge-Intensive NLP Tasks</a> — Lewis et al., 2020，RAG 的原始论文，定义了「参数化记忆 + 非参数化记忆」这套说法</p>
+    <p><a href="https://www.anthropic.com/engineering/contextual-retrieval" target="_blank">Anthropic: Introducing Contextual Retrieval</a> — 官方工程博客，用真实指标（5.7% → 2.9% → 1.9%）说明混合检索与重排各自的收益</p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p><a href="0002-chunking-and-indexing.html">第 2 课 · 切分与索引：chunk 策略决定召回上限 →</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>随时问我任何不清楚的地方——我是你的老师，可以帮你拆解概念、模拟追问、调整节奏。觉得这段口播难开口，就把你录的那版发我，我按面试官视角给你挑刺。</p>
+  </section>
+</footer>
+
+<script src="../assets/lesson.js"></script>
+</body>
+</html>

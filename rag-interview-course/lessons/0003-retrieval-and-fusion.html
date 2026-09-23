@@ -1,0 +1,601 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>第 3 课 · 检索与查询改写</title>
+  <link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+
+<header class="lesson-header">
+  <p class="lesson-eyebrow">第 3 课 · RAG 面试冲刺</p>
+  <h1 class="lesson-title">检索与查询改写：为什么纯向量不够</h1>
+  <p class="lesson-meta">BM25 · 混合检索 · 融合的量纲难题 · RRF 与按分数融合 · 约 22 分钟</p>
+</header>
+
+<main>
+
+<h2>一、两种检索在互补的地方失败</h2>
+
+<p>
+  第 1 课说过纯向量对「型号、错误码」这类精确串不敏感。但光知道「向量会漏精确匹配」还不够，
+  面试官会接着问：<strong>那加什么、怎么加、加了有什么用</strong>。这三点就是本课。
+</p>
+
+<p>
+  <a href="https://qdrant.tech/articles/hybrid-search/" target="_blank">Qdrant 用一组真实商品检索查询</a>把这件事讲得最清楚——
+  同一个查询，两种检索谁把相关商品排第一：
+</p>
+
+<table>
+  <thead>
+    <tr><th>查询</th><th>稠密（向量）检索排第一的</th><th>稀疏（BM25）检索排第一的</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>french molding</code></td>
+      <td>french curves rosette applique <strong>相关</strong></td>
+      <td>french bread mold toast tray <em>不相关</em></td>
+    </tr>
+    <tr>
+      <td><code>wayfair comforters</code></td>
+      <td>wayfair basics comforter set <strong>相关</strong></td>
+      <td>wayfair basics peva shower curtain liner <em>不相关</em></td>
+    </tr>
+    <tr>
+      <td><code>bathroom vanity knobs</code></td>
+      <td>carran 30'' single bathroom vanity set <em>不相关</em></td>
+      <td>damask mushroom knob <strong>相关</strong></td>
+    </tr>
+    <tr>
+      <td><code>farmhouse cabinet</code></td>
+      <td>rustic storage cabinet <em>不相关</em></td>
+      <td>farmhouse 2 door accent cabinet <strong>相关</strong></td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  看第一行：查「french molding」，稀疏检索跟着 <code>french</code> 和 <code>mold</code> 两个词，
+  一路跑到了「法式面包模具」上——它把 <code>mold</code> 理解成了模具，而用户要的是装饰线条（molding）。
+  稀疏检索对<strong>词形和词义</strong>是盲的。
+</p>
+
+<p>
+  再看第三行：查「浴室柜旋钮」，稠密检索找到了「浴室柜」这个领域，却选了一个不带旋钮的整体柜；
+  稀疏检索跟着 <code>knobs</code> 这个词，精准命中了旋钮商品。稠密检索对<strong>精确词项</strong>是盲的。
+</p>
+
+<blockquote>
+  <p>
+    <strong>两种盲区是对称的，所以它们能互相补。</strong>Qdrant 有一句话说到了要害：
+    无论哪种检索失败，<em>「你的日志都会记下一次『成功』的查询」</em>——
+    检索失败是静默的，用户拿到了看着很合理的结果，而你以为系统跑得很好。
+  </p>
+</blockquote>
+
+<p>
+  这也是为什么 <a href="https://arxiv.org/abs/2104.08663" target="_blank">BEIR 那篇基准论文</a>的结论值得记住：
+  <strong>BM25 是一个极强的基线</strong>，很多复杂方案在零样本设定下并不能稳定赢过它。
+  面试里主动说「BM25 是强基线，所以我会先量它」比一上来就吹稠密检索稳得多。
+</p>
+
+<h2>二、BM25：为什么它三十年不倒</h2>
+
+<p>
+  BM25 不是「关键词匹配」这么含糊的东西，它有一个精确的公式，而且面试官（尤其算法岗）会问。
+  下面是 <a href="https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html" target="_blank">Stanford IR 教材</a>给的标准形式：
+</p>
+
+<pre><code>              <span class="c"># 对查询里每个词 t 求和</span>
+              ⎛ N ⎞   (k₁ + 1) · tf(t,d)
+score(d, q) = Σ log│───│ · ─────────────────────────────
+              ⎝df_t⎠   k₁·((1 - b) + b · L_d / L_avg) + tf(t,d)</code></pre>
+
+<p>
+  逐项拆开看，每一项都在解决一个具体问题——这样你就不用死记：
+</p>
+
+<ul>
+  <li><code>log(N / df_t)</code> —— <strong>IDF，稀有词更值钱</strong>。出现在半数以上文档里的词权重会趋近 0。
+    （教材提到一个更精细的变体 <code>log((N - df_t + 0.5)/(df_t + 0.5))</code>，它在词出现于超过一半文档时会变成负数，所以通常要加一个 0 下限。）</li>
+  <li><code>tf(t,d)</code> —— <strong>词频，但带饱和</strong>。这是 BM25 最精妙的地方：一个词出现 10 次，
+    并不比出现 2 次重要 5 倍。看公式右边的分式，当 <code>tf</code> 增大时它趋近于上限 <code>(k₁+1)</code>，也就是<strong>收益递减</strong>。</li>
+  <li><code>L_d / L_avg</code> —— <strong>文档长度归一化</strong>。长文档天然更容易命中任何词，所以要惩罚长度。
+    <code>b</code> 就是控制这个惩罚强度的开关。</li>
+</ul>
+
+<p>两个参数的语义，教材写得很明确：</p>
+
+<table>
+  <thead>
+    <tr><th>参数</th><th>取值含义</th><th>实践默认</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>k₁</code></td>
+      <td>调节词频的缩放。<strong><code>k₁ = 0</code> 退化成「只看出没出现」的二值模型</strong>（完全不管出现几次）；<code>k₁</code> 很大则等于直接拿原始词频来用</td>
+      <td>1.2 – 2</td>
+    </tr>
+    <tr>
+      <td><code>b</code></td>
+      <td>文档长度缩放。<strong><code>b = 1</code> 完全按长度归一化，<code>b = 0</code> 完全不归一化</strong></td>
+      <td>0.75</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  这两个默认值（<code>k₁</code> 取 1.2–2、<code>b</code> 取 0.75）是教材在没有做参数优化时的推荐值。
+  更规范的做法是在一个开发集上用网格搜索调——这一点和 chunk size 是同一个道理：<strong>可调的参数都应该被测量，而不是被继承</strong>。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>BM25 有一个被低估的工程优势：它不做任何模型推理。</strong>
+    索引期不需要 GPU，在线查询只算词频加权，延迟和成本都极低。这就是为什么「加一路稀疏检索」是一件性价比很高的事——
+    但也仅此而已，别把它当成万能药，代价在第五节。
+  </p>
+</div>
+
+<p>
+  在 BM25 之上还有<strong>学习式稀疏检索</strong>，面试里能提一句会显得你读过论文：
+  <strong>SPLADE</strong> 会补上原文里根本没出现过的相关词（召回同义词），
+  <strong>miniCOIL</strong> 则保留 BM25 的词项匹配但按上下文重新加权——
+  让体育文章里的 <code>bat</code>（球棒）和动物指南里的 <code>bat</code>（蝙蝠）不再共享同一个权重。
+  Qdrant 给的建议很克制，我建议你照抄：<strong>先用 BM25，再拿学习式模型跟它比，比过了才换。</strong>
+</p>
+
+<h2>三、融合的真正难题不是「相加」，是「量纲」</h2>
+
+<p>
+  现在你有了两路结果，要把它们合成一个排序。第一反应是加权求和，比如
+  <code>0.5 × 余弦 + 0.5 × BM25</code>。这个做法会翻车，原因值得你记一辈子：
+</p>
+
+<div class="callout">
+  <p>
+    <strong>余弦相似度是有界的（大致 0–1），而 BM25 的量纲取决于「命中了几个查询词、这些词有多稀有」。</strong>
+  </p>
+  <p>
+    所以同一个权重，在查询 A 上刚好平衡，在查询 B 上可能让 BM25 一边倒——
+    <strong>没有任何一组固定权重能对所有查询保持同样的平衡</strong>。
+    Qdrant 用两张散点图说明这件事：余弦分数稳定在 0.6–0.9，而 BM25 在查询 A 上全都不超过 20，在查询 B 上却有 20–80 的跨度。
+  </p>
+</div>
+
+<p>于是融合分成两派，理解这两派的差别，比记住任何一个公式都重要：</p>
+
+<table>
+  <thead>
+    <tr><th>派别</th><th>做法</th><th>代表</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><strong>按名次融合</strong></td>
+      <td>丢掉分数大小，只看每个文档在各路里排第几</td>
+      <td>RRF（倒数排名融合）</td>
+    </tr>
+    <tr>
+      <td><strong>按分数融合</strong></td>
+      <td>先按查询把每一路的分数归一化到同一尺度，再加权相加</td>
+      <td>DBSF、Weaviate 的 relativeScoreFusion</td>
+    </tr>
+  </tbody>
+</table>
+
+<h2>四、RRF：只用名次的好处</h2>
+
+<p>
+  RRF 的公式短到可以背下来，出自 <a href="https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf" target="_blank">Cormack、Clarke 与 Büttcher 2009 年的两页短文</a>：
+</p>
+
+<pre><code>RRF(d) = Σ        1 / (k + r(d))
+         r ∈ R</code></pre>
+
+<p>
+  <code>r(d)</code> 是文档 <code>d</code> 在第 <code>r</code> 路结果里的名次（原文用 1 起始的名次）。
+  <strong>注意公式里没有分数</strong>——这就是它的全部卖点：
+  它能把「余弦 0.7」和「BM25 12.4」放在一起融合，因为<strong>它从不需要比较这两个值</strong>。量纲问题直接消失了。
+</p>
+
+<div class="callout">
+  <p>
+    <strong><code>k = 60</code> 不是拍脑袋来的，原文有交代。</strong>
+    Cormack 等人的原话是：<code>k = 60</code> 在一次先导实验中被固定下来，之后的验证里没有再改动。
+    他们给的直觉是——<em>「高度靠前的文档更重要，但靠后文档的重要性不应该像指数函数那样迅速消失；
+    常数 <code>k</code> 用来缓和异常系统给出的高排名所带来的影响。」</em>
+  </p>
+</div>
+
+<p>
+  最后那句话值得你反复读，因为它直接解释了 RRF 的行为偏好。我们用一个手算得出来的例子看：
+  稠密检索给出 <code>D3, D1, D7, D2, D9</code>，稀疏检索给出 <code>D5, D3, D2, D8, D1</code>。
+  （分数也一并给出，下一节要用来对比：稠密余弦 <code>D3 0.82 / D1 0.79 / D7 0.78 / D2 0.77 / D9 0.76</code>；
+  稀疏 BM25 <code>D5 18.4 / D3 12.1 / D2 9.7 / D8 4.2 / D1 3.9</code>。）
+</p>
+
+<table>
+  <thead>
+    <tr><th>文档</th><th>稠密名次</th><th>稀疏名次</th><th>RRF 分数（k=60）</th><th>最终排名</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>D3</td><td>#1</td><td>#2</td><td>0.03252</td><td><strong>1</strong></td></tr>
+    <tr><td>D1</td><td>#2</td><td>#5</td><td>0.03151</td><td>2</td></tr>
+    <tr><td>D2</td><td>#4</td><td>#3</td><td>0.03150</td><td>3</td></tr>
+    <tr><td>D5</td><td>—</td><td>#1</td><td>0.01639</td><td>4</td></tr>
+    <tr><td>D7</td><td>#3</td><td>—</td><td>0.01587</td><td>5</td></tr>
+    <tr><td>D8</td><td>—</td><td>#4</td><td>0.01562</td><td>6</td></tr>
+    <tr><td>D9</td><td>#5</td><td>—</td><td>0.01538</td><td>7</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>请盯着 D5 看。</strong>它是稀疏检索的第一名——两路里唯一一个被某一路排到榜首的文档——
+  但最终只排第 4，输给了稠密第 2、稀疏第 5 的 D1，也输给了两边都只是中游的 D2。
+</p>
+
+<p>
+  这不是 bug，这是 RRF 的设计意图。因为 <code>k=60</code> 把名次的差别压得很平：
+  第 1 名是 <code>1/61 ≈ 0.0164</code>，第 5 名是 <code>1/65 ≈ 0.0154</code>，只差 6% 左右。
+  于是一个文档的最终得分，主要取决于<strong>它被几路同时看好</strong>，而不是它在某一路里多靠前。
+  换句话说：<strong>RRF 是一个共识机制，它奖励「都认可」，惩罚「一枝独秀」。</strong>
+</p>
+
+<div class="callout">
+  <p>
+    <strong>这个性质既是优点也是风险，而风险才是面试的考点。</strong>
+    如果用户查的正是那个冷门型号，稠密检索完全没召回、只有 BM25 找到了它——RRF 会因为稠密那边投了反对票，把它压到中游。
+    <strong>你引入混合检索本来就是为了救这种查询，RRF 却可能把它埋掉。</strong>
+  </p>
+  <p>
+    那怎么救它？最直觉的答案是「给稀疏那一路加权重」。<strong>我实际算过，这个办法是钝器，基本没用</strong>——
+    因为加大稀疏权重的同时，也抬高了 D1（它同样在稀疏列表里，只是排 #5）。
+    在这个例子里，要让 D5 压过 D1，稀疏权重得大到<strong>约 16 倍</strong>；而那时整个排序已经被稀疏一路主导，
+    混合检索的意义也就没了。权重调 3 倍、10 倍，D5 都还稳稳待在第 4 位。
+  </p>
+  <p>
+    <strong>真正能救它的不是调参数，而是换融合的「派别」</strong>——下一节的按分数融合会保留 D5 那个 18.4 对 12.1 的巨大领先，
+    <strong>不需要任何权重就能把它送到第 2 位</strong>。能讲清这一段，你就和背公式的人分开了。
+  </p>
+</div>
+
+<h2>五、另一条路：按分数融合</h2>
+
+<p>
+  <a href="https://weaviate.io/blog/hybrid-search-fusion-algorithms" target="_blank">Weaviate 把两派都实现了</a>，
+  这是理解差别最好的现成材料：
+</p>
+
+<table>
+  <thead>
+    <tr><th>算法</th><th>做法</th><th>特点</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td><code>rankedFusion</code>（旧默认）</td>
+      <td>按名次给分，<code>1/(rank + 60)</code>，两路相加</td>
+      <td>就是 RRF。只用名次，对量纲免疫</td>
+    </tr>
+    <tr>
+      <td><code>relativeScoreFusion</code>（1.24 起默认）</td>
+      <td>按查询把每路分数归一化——<strong>最高分变 1、最低分变 0</strong>，中间按相对距离缩放——再按 <code>alpha</code> 加权相加</td>
+      <td><strong>保留分数差距</strong>，所以一路的「压倒性领先」能影响最终排序</td>
+    </tr>
+  </tbody>
+</table>
+
+<p>
+  回到 D5 那个例子。稀疏检索给 D5 的分数是 18.4，而第二名只有 12.1——<strong>这是一个压倒性的领先</strong>。
+  按分数融合会把它保留下来：各自归一化之后，D5 拿到 1.0，而稀疏那一列的第二名只有 0.57。
+  我把同一组分数用 DBSF（按查询分别归一化再相加）实算了一遍，结果和 RRF 差别很大：
+</p>
+
+<table>
+  <thead>
+    <tr><th>文档</th><th>RRF 下的排名</th><th>DBSF 归一化得分</th><th>DBSF 下的排名</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>D3</td><td>1</td><td>1.566</td><td>1</td></tr>
+    <tr><td>D5</td><td><strong>4</strong></td><td>1.000</td><td><strong>2</strong></td></tr>
+    <tr><td>D2</td><td>3</td><td>0.567</td><td>3</td></tr>
+    <tr><td>D1</td><td>2</td><td>0.500</td><td>4</td></tr>
+    <tr><td>D7</td><td>5</td><td>0.333</td><td>5</td></tr>
+    <tr><td>D8</td><td>6</td><td>0.021</td><td>6</td></tr>
+    <tr><td>D9</td><td>7</td><td>0.000</td><td>7</td></tr>
+  </tbody>
+</table>
+
+<p>
+  <strong>这就是两派最本质的区别：要不要保留「赢多少」的信息。</strong>
+  RRF 只记下「D5 是稀疏第 1 名」，却看不见它领先了 6 分；DBSF 看得见，所以 D5 从第 4 名升到第 2 名，
+  <strong>而且不需要调任何权重</strong>。反过来说，DBSF 的脆弱点也在这里：它依赖分数分布，
+  所以当某一路的分数分布本身不可靠（比如 BM25 在长查询下的量纲漂移）时，它会把这种不可靠也一起放大。
+</p>
+
+<p>
+  Weaviate 在 1.24 把默认从 <code>rankedFusion</code> 换成了 <code>relativeScoreFusion</code>，
+  理由是内部基准（FIQA 数据集）上召回率提升了约 6%，且它保留了更多原始信息；<code>alpha</code> 参数则让你控制偏向关键词还是偏向向量。
+  <strong>但请记住这是厂商内部基准、非第三方复现</strong>——面试引用时把这句话带上。
+</p>
+
+<h2>六、融合有一个硬边界，这一条最能拉开差距</h2>
+
+<div class="interviewer">
+  <p>「我用了混合检索加 RRF，为什么还是漏了那篇文档？」</p>
+</div>
+
+<p>
+  Qdrant 有一句话我认为是整个混合检索话题里最重要的：
+  <strong><em>融合只做重排。它作用在两路候选的并集上，所以两路都没找到的文档，不可能出现在结果里的任何位置。</em></strong>
+</p>
+
+<p>
+  这句话的含义是：<strong>融合不能创造候选，它只能重新分配已有候选的顺序。</strong>
+  你花了力气调融合算法，但如果正确答案在两路的前 100 条之外，<strong>所有融合算法都一样无能为力</strong>。
+  这时候该动的是<strong>候选深度</strong>（prefetch 的 limit），而不是融合方法——
+  而且加深度也有代价：检索工作量变大，而且如果两路在更深处依然找不到它，加深也没用。
+</p>
+
+<p>
+  这个「先看候选集有没有、再看排序对不对」的排查顺序，同样是你第 5 课做评测和归因时的基本框架。
+</p>
+
+<h2>七、混合检索不是免费的</h2>
+
+<p>
+  面试里如果你只说「混合检索能提升效果」，那只是一半答案。另一半是代价，而代价让这个方案变得需要论证：
+</p>
+
+<ul>
+  <li><strong>存储与索引</strong>：每个文档要多存一个稀疏向量，多建一个索引，每次查询多跑一路检索。</li>
+  <li><strong>延迟</strong>：Qdrant 在一个容器、单请求、无并发的条件下测得<strong>中位延迟增加 0.60 – 1.47 毫秒</strong>。
+    注意这个前提——它明确提醒要在<strong>你自己的并发与分片条件下</strong>重新测，别把这个数字搬到你自己的容量规划里。</li>
+  <li><strong>改造代价</strong>：给一个已经在跑的纯稠密库加上稀疏向量，<strong>必须新建 collection 并全量重建索引</strong>，因为向量配置在创建时就固定了。</li>
+  <li><strong>一个容易忽略的坑</strong>：稀疏向量要打开 <strong>IDF 修饰</strong>，让稀有词权重更高。
+    Qdrant 的原话很有画面感——<em>没有它，一个常见词可能和一个零件编号得到同样的权重。</em></li>
+</ul>
+
+<p>然后是最重要的一条：<strong>混合检索不是稳赚的</strong>。Qdrant 在五个公开数据集上用 nDCG@10 对比了纯稠密、纯稀疏和 RRF 融合：</p>
+
+<table>
+  <thead>
+    <tr><th>数据集</th><th>纯稠密</th><th>纯稀疏（BM25）</th><th>RRF 融合</th></tr>
+  </thead>
+  <tbody>
+    <tr><td>SciFact</td><td>0.6239</td><td>0.6886</td><td><strong>0.7175</strong></td></tr>
+    <tr><td>ArguAna</td><td>0.4905</td><td>0.4224</td><td><strong>0.5216</strong></td></tr>
+    <tr><td>WANDS</td><td>0.6921</td><td>0.7098</td><td><strong>0.7254</strong></td></tr>
+    <tr><td>CodeSearchNet</td><td>0.6299</td><td>0.5126</td><td><strong>0.6555</strong></td></tr>
+    <tr><td>DBPedia-entity</td><td><strong>0.4677</strong></td><td>0.3857</td><td>0.4638</td></tr>
+  </tbody>
+</table>
+
+<p>
+  融合在 5 个数据集里赢了 4 个（都不是小赢），<strong>但 DBPedia-entity 上它输给了纯稠密</strong>。
+  这一个反例的价值超过前面四个正例，因为它证明了：<strong>混合检索的收益依赖于数据分布，不是普适的。</strong>
+  所以正确的说法不是「混合检索更好」，而是「<strong>混合检索在这类查询上更好，而我会用带标注的查询集在自己的数据上验证</strong>」。
+</p>
+
+<h2>八、查询改写：让用户的问法更像文档的说法</h2>
+
+<p>
+  检索失败的另一个源头在查询这一侧：用户的问题短、口语化、用的是他自己的词，而语料用的是另一套词。
+  查询改写就是为了弥合这个鸿沟。两种常见做法：
+</p>
+
+<h3>多路查询（multi-query）</h3>
+
+<p>
+  让 LLM 把原问题改写成几个不同角度的查询，各自检索，再融合（正好用上本课学的融合）。
+  好处是覆盖面变宽；代价是<strong>检索次数变成 N 倍</strong>，外加一次 LLM 调用，延迟和成本都上去。
+</p>
+
+<h3>HyDE：先编一个假答案，再拿它去检索</h3>
+
+<p>
+  <a href="https://arxiv.org/abs/2212.10496" target="_blank">HyDE</a> 的做法有点反直觉：
+  先让 LLM 针对问题<strong>生成一段假想的答案文档</strong>，再把这篇文章向量化去检索。
+  理由是——<strong>答案的写法天然比问题的写法更像文档</strong>，所以在向量空间里离真实文档更近；
+  而假答案里编造的具体细节，会被编码器的稠密瓶颈过滤掉，不会污染检索方向。
+</p>
+
+<div class="callout">
+  <p>
+    <strong>但别把 HyDE 说过头。</strong>Anthropic 在 Contextual Retrieval 那篇里明确提到，
+    他们评估过同类思路（包括假想文档嵌入与基于摘要的索引），<strong>收益有限</strong>。
+    所以稳妥的表述是：「HyDE 在零样本、领域外检索上是有依据的方案，但它的收益依赖场景，我会先量再上。」
+  </p>
+</div>
+
+<p>
+  最后补一个反向考点：<strong>查询改写也会帮倒忙</strong>。
+  如果用户的查询本身就是一个精确的型号或错误码，改写可能把它「顺滑」成一个语义相近但丢掉关键串的句子——
+  本来 BM25 能一击命中的，反而查不到了。<strong>知道什么时候不该改写</strong>，和知道怎么写，是同一件事的两面。
+</p>
+
+<h2>九、面试官原话</h2>
+
+<div class="interviewer">
+  <p>「你为什么要在项目里上混合检索？给我讲讲收益和代价。」</p>
+</div>
+
+<p>
+  完整答法应当含四个部分：<strong>① 动机</strong>（稠密漏精确串、稀疏漏同义改写，两种盲区互补）；
+  <strong>② 机制</strong>（RRF 融合，因为余弦有界而 BM25 量纲随查询漂移，不能直接加权求和）；
+  <strong>③ 代价</strong>（多一个索引与一路检索、中位延迟增加若干毫秒、已有库要全量重建、稀疏向量必须开 IDF 修饰）；
+  <strong>④ 验证</strong>（在我们自己的带标注查询集上比 nDCG@10 或 Recall@k，并说明它不一定赢——公开数据集上就有一个反例）。
+  四段齐了，这一题就是满分。
+</p>
+
+<div class="interviewer">
+  <p>「RRF 里的 k 是干什么用的？你会调它吗？」</p>
+</div>
+
+<p>
+  答「60 是论文里固定的值，作用是缓和异常系统的高排名影响」——这是及格。
+  加分的是接着说：<strong>调小 k 会让单路的高排名更值钱</strong>。我在上面的例子里实算过：
+  <code>k</code> 从 60 调到 1，D5（稀疏第 1）的分数从 0.01639 涨到 0.50，确实超过了「两路都中游」的 D2（0.45）。
+</p>
+
+<p>
+  但更值得说的是<strong>它救不了全部</strong>：同一个 <code>k=1</code> 下，D1 和 D5 的分数<strong>正好打平</strong>（都是 0.50），
+  谁排前面完全取决于你的兜底排序规则——这正是下面代码里要专门处理的问题。
+  所以我的结论是：<strong>k 和权重都是钝器；要让「某一路独占命中」的文档拿到应有的地位，换融合派别比调参数有效得多。</strong>
+</p>
+
+<h2>十、自测：合上上文再答</h2>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 1 题</p>
+  <p class="quiz-question">混合检索里，融合算法要解决的核心问题是什么？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。余弦有界、BM25 量纲随查询漂移，没有任何固定权重能对所有查询保持同样的平衡——这才是融合的真问题。">两路分数的量纲不同</li>
+    <li data-why="不对。条数不一致可以用截断对齐，这是工程细节，不是融合困难的根本原因。">两路召回的条数不同</li>
+    <li data-why="不对。维度只影响各自内部的距离计算，两路本来就不需要维度相同。">两路模型的维度不同</li>
+    <li data-why="不对。索引构建方式是实现差异，和融合时如何合并排序是两件事。">两路索引的构建不同</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 2 题</p>
+  <p class="quiz-question">RRF 里 k=60 这个常数，实际作用是什么？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。原文说它用来「缓和异常系统给出的高排名所带来的影响」——它把名次差距压平，让结果更看重多路共识。">压低单路高排名权重</li>
+    <li data-why="不对。融合不改变各路召回的内容，重叠度由两路检索器本身决定。">提升两路结果重叠度</li>
+    <li data-why="不对。候选数量由每路检索的 limit 决定，与融合常数无关。">控制召回候选的规模</li>
+    <li data-why="不对。融合的计算量极小，k 不是性能参数，它改变的是排序结果本身。">加快融合排序的速度</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<div class="quiz">
+  <p class="quiz-title">检索练习 · 第 3 题</p>
+  <p class="quiz-question">某文档不在这两路检索的任何候选列表里，融合会怎样？</p>
+  <ul class="quiz-options">
+    <li data-correct="true" data-why="对。融合只重排、不创造候选，它作用在两路的并集上。这时该加的是候选深度，不是换融合算法。">不会出现在结果里</li>
+    <li data-why="不对。融合算法拿不到任何关于这个文档的分数或名次，无从把它补回来。">会按相似度补回来</li>
+    <li data-why="不对。它连候选都不是，谈不上排名位置，更不会出现在末尾。">会排在结果末尾处</li>
+    <li data-why="不对。这是本题最危险的干扰项——所有融合算法的行为在这里都一样：无能为力。">取决于融合的算法</li>
+  </ul>
+  <p class="quiz-feedback"></p>
+</div>
+
+<p class="quiz-score-note" data-quiz-score></p>
+
+<h2>十一、真练一次：手撕 RRF 并手算一遍</h2>
+
+<p>
+  「手撕代码」轮次的高频题就是实现 RRF。它代码很短，所以面试官会追问边界条件——那才是真正的考点。
+</p>
+
+<details class="drill">
+  <summary>先自己写，再展开参考实现与三个追问</summary>
+  <div class="drill-body">
+<pre><code><span class="k">def</span> rrf(ranked_lists, k=60, weights=None):
+    <span class="s">"""把多路检索结果按名次融合。
+
+    ranked_lists: [[doc_id, ...], ...]，每一路已按相关度降序。
+    weights:      每路的权重，默认等权。想偏向稀疏那路时就用它。
+    """</span>
+    <span class="k">if</span> weights <span class="k">is</span> <span class="k">None</span>:
+        weights = [1.0] * len(ranked_lists)
+
+    scores = {}
+    <span class="k">for</span> lst, w <span class="k">in</span> zip(ranked_lists, weights):
+        <span class="k">for</span> i, doc <span class="k">in</span> enumerate(lst):
+            rank = i + 1                       <span class="c"># 原始论文用 1 起始的名次</span>
+            scores[doc] = scores.get(doc, 0.0) + w / (k + rank)
+
+    <span class="c"># 分数相同时按 doc_id 定序，保证结果可复现（否则依赖字典序，难复现）</span>
+    <span class="k">return</span> sorted(scores.items(), key=<span class="k">lambda</span> kv: (-kv[1], str(kv[0])))</code></pre>
+
+    <p><strong>面试官紧接着会问的三个问题，先想好再往下看：</strong></p>
+
+    <p>
+      <strong>① 名次从 0 还是从 1 开始？</strong>原始论文定义名次是 1 到 |D| 的排列，所以上面用 <code>i + 1</code>。
+      有些实现用 0 起始。两种只让所有分数整体平移一点，<strong>通常不改变排序</strong>，
+      但你得知道自己在用哪种——被追问时答不上来，会显得你只是抄了一段代码。
+    </p>
+
+    <p>
+      <strong>② 分数打了平手怎么办？</strong>上面的例子算出来 D1（0.03151）和 D2（0.03150）非常接近，
+      现实中打平很常见。如果不显式定序，返回顺序会依赖字典的遍历顺序，<strong>同一个查询两次跑出不同结果</strong>。
+      这是评测里最难查的一类问题：你的指标会莫名其妙地抖。所以我加了 <code>str(doc_id)</code> 作为兜底排序键。
+    </p>
+
+    <p>
+      <strong>③ 怎么让它偏向某一路？</strong>加权重（上面已支持）。但要意识到：
+      <strong>权重和 k 是两种不同的杠杆</strong>——k 改变「名次差距被压平多少」，权重改变「哪一路说话更响」。
+      调之前先想清楚你要修的是哪一种失败。
+    </p>
+
+    <p>
+      <strong>再加一个练习，这个练习会让你真正理解 RRF 的局限</strong>：拿本课第四节的例子
+      （稠密 <code>D3,D1,D7,D2,D9</code>；稀疏 <code>D5,D3,D2,D8,D1</code>），先用手算验证表格里的 RRF 分数，再跑代码对齐。
+    </p>
+    <p>
+      然后把稀疏那一路的权重依次设成 <strong>3、10、25</strong>，观察 D5 的排名。
+      你会看到一个反直觉的结果：<strong>权重加到 10 倍，D5 还是第 4 位；要到约 16 倍它才超过 D1</strong>——
+      而这时排序已经被稀疏一路主导了。
+    </p>
+    <p>
+      原因值得你想清楚：<strong>加大某一路的权重，会同时抬高这一路里的所有文档，包括你并不想抬的那个。</strong>
+      D1 虽然在稀疏里只排 #5，但它额外拿到稠密那一路的 #2，所以它跟着水涨船高。
+      权重是个<strong>钝器</strong>，它无法只挑出「那一个独占命中的文档」。
+    </p>
+    <p>
+      最后把同一组分数丢给按分数融合（DBSF），你会看到 D5 直接升到第 2 名，一次权重都不用调。
+      <strong>这三步做完，「RRF 用名次换取稳健、代价是丢掉赢多少」这句话对你就不是知识，而是经验了。</strong>
+    </p>
+  </div>
+</details>
+
+<h2>十二、本课要带走的三句话</h2>
+
+<ol>
+  <li><strong>稠密与稀疏的盲区是对称的</strong>，所以混合检索有价值——但这个价值必须在<strong>你自己的带标注查询集</strong>上验证，公开数据集上就有反例。</li>
+  <li><strong>融合的真问题是量纲，不是加法。</strong>RRF 用「只看名次」绕开它，代价是丢掉「赢多少」的信息，因此会埋掉一枝独秀的文档。</li>
+  <li><strong>融合不能创造候选。</strong>两路都没找到的文档，换什么融合算法都没用——该动的是候选深度。</li>
+</ol>
+
+<div class="docnav">
+  <h5>本课程的参考文档</h5>
+  <ul>
+    <li><a href="../reference/retrieval-fusion-cheatsheet.html">检索与融合速查</a> — BM25 参数、RRF 手算表、融合选型与调参顺序</li>
+    <li><a href="../reference/chunking-cheatsheet.html">切分策略速查</a>（第 2 课）</li>
+    <li><a href="../reference/rag-roadmap.html">RAG 面试冲刺 · 全课程地图</a></li>
+    <li><a href="../GLOSSARY.md">RAG 面试 Glossary</a></li>
+  </ul>
+</div>
+
+</main>
+
+<footer class="lesson-footer">
+  <section>
+    <h4>主要参考</h4>
+    <p><a href="https://qdrant.tech/articles/hybrid-search/" target="_blank">Qdrant: Hybrid Search in Qdrant</a> — 本课主源。稠密/稀疏互补的真实反例、量纲问题、RRF 与 DBSF 的差别、五个数据集的 nDCG@10 对比、延迟代价与 IDF 修饰</p>
+    <p><a href="https://nlp.stanford.edu/IR-book/html/htmledition/okapi-bm25-a-non-binary-model-1.html" target="_blank">Stanford IR Book · Ch.11 Okapi BM25</a> — BM25 公式、k₁ 与 b 的语义、默认取值（k₁ 1.2–2、b 0.75）的权威来源</p>
+    <p><a href="https://plg.uwaterloo.ca/~gvcormac/cormacksigir09-rrf.pdf" target="_blank">Cormack, Clarke &amp; Büttcher: Reciprocal Rank Fusion (SIGIR 2009)</a> — RRF 原始两页短文，k=60 的出处与其设计意图</p>
+    <p><a href="https://weaviate.io/blog/hybrid-search-fusion-algorithms" target="_blank">Weaviate: Fusion Algorithms Deep Dive</a> — rankedFusion 与 relativeScoreFusion 的差别、alpha 语义、1.24 换默认</p>
+  </section>
+  <section>
+    <h4>深入阅读</h4>
+    <p><a href="https://arxiv.org/abs/2104.08663" target="_blank">BEIR</a> — 为什么 BM25 是必须尊重的强基线</p>
+    <p><a href="https://arxiv.org/abs/2212.10496" target="_blank">HyDE</a> — 假想文档嵌入的原始论文</p>
+  </section>
+  <section>
+    <h4>下一课</h4>
+    <p><a href="0004-reranking-and-two-stage.html">第 4 课 · 重排与两段式检索：召回里有答案，为什么还是答错 →</a></p>
+  </section>
+  <section>
+    <h4>有疑问？</h4>
+    <p>随时问我任何不清楚的地方——我是你的老师，可以帮你拆解概念、模拟追问、调整节奏。RRF 那三个追问想不清楚，直接来问我。</p>
+  </section>
+</footer>
+
+<script src="../assets/lesson.js"></script>
+</body>
+</html>
