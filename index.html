@@ -134,7 +134,11 @@
   .contact p { color: var(--muted); margin-bottom: 22px; }
   .btn { display: inline-flex; padding: 12px 24px; border-radius: 999px; background: var(--btn-bg); color: var(--btn-ink); font-weight: 700; text-decoration: none; font-size: 0.9rem; }
   .btn:hover { opacity: 0.88; }
-  .footer { padding: 28px 28px 44px; text-align: center; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--line); }
+  .footer { padding: 28px 28px 12px; text-align: center; color: var(--muted); font-size: 0.8rem; border-top: 1px solid var(--line); }
+  /* ICP 备案号（法规要求：网站底部展示备案号并链接工信部） */
+  .icp { padding: 0 28px 40px; text-align: center; color: var(--muted); font-size: 0.75rem; }
+  .icp a { color: inherit; text-decoration: none; }
+  .icp a:hover { text-decoration: underline; }
 
   /* ============ 弹窗（教程入口，恒为浅色便于阅读） ============ */
   .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(15,17,19,0.6); backdrop-filter: blur(4px); z-index: 1000; align-items: center; justify-content: center; padding: 24px; }
@@ -202,6 +206,7 @@
   <a class="btn" href="mailto:hello@example.com" data-profile-email>发送邮件</a>
 </section>
 <footer class="footer" data-profile="footer"></footer>
+<p class="icp"><a href="https://beian.miit.gov.cn/" target="_blank" rel="noopener">浙ICP备2026081326号</a></p>
 
 <!-- 弹窗（教程入口） -->
 <div class="modal-overlay" id="modalOverlay">
